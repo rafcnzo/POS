@@ -681,7 +681,6 @@
 
         const formatCurrency = (value) => 'Rp ' + (value || 0).toLocaleString('id-ID');
 
-        // 2. Event listener saat kartu produk diklik
         document.querySelectorAll('.pos-product-card').forEach(card => {
             card.addEventListener('click', function() {
                 const productId = this.dataset.id;
@@ -913,7 +912,7 @@
         function updateTotal() {
             const total = cart.reduce((sum, item) => {
                 const modifiersPrice = item.modifiers.reduce((s, mod) => s + parseFloat(mod.price), 0);
-                return sum + ((item.price + modifiersPrice) * item.quantity); 
+                return sum + ((item.price + modifiersPrice) * item.quantity);
             }, 0);
             document.getElementById('subtotalAmount').textContent = formatCurrency(total);
             document.getElementById('totalAmount').textContent = formatCurrency(total);
@@ -1072,10 +1071,15 @@
                 const product = menuItemsData.find(item => item.id == productId);
 
                 if (product) {
-                    resultsContainer.style.display = 'none';
-                    searchInput.value = ''; // Kosongkan input
-
-                    openCustomizeModal(product);
+                    // Cek stok sebelum buka modal
+                    if (product.calculated_stock > 0) {
+                        resultsContainer.style.display = 'none';
+                        searchInput.value = ''; // Kosongkan input
+                        currentProduct = product;
+                        openCustomizeModal(product);
+                    } else {
+                        Swal.fire('Stok Habis', 'Stok produk ini sudah habis.', 'warning');
+                    }
                 }
             }
         });

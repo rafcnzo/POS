@@ -59,6 +59,19 @@
                                         <small class="form-text text-muted">Masukkan persentase pajak, contoh: 10 untuk
                                             10%</small>
                                     </div>
+
+                                    {{-- Tambahan: Target Penjualan Harian --}}
+                                    <div class="form-group-custom mb-4">
+                                        <label for="daily_sales_target" class="form-label-custom">
+                                            <i class="bi bi-flag"></i> Target Penjualan Harian (Rp)
+                                        </label>
+                                        <input type="number" class="form-control-custom" id="daily_sales_target" name="daily_sales_target"
+                                            min="0" step="1"
+                                            value="{{ isset($settings['daily_sales_target']) ? $settings['daily_sales_target'] : '' }}"
+                                            placeholder="Masukkan target penjualan harian">
+                                        <small class="form-text text-muted">Isi target penjualan harian (dalam Rupiah, tanpa titik/koma).</small>
+                                    </div>
+
                                     <div class="form-group-custom">
                                         <label for="store_address" class="form-label-custom">
                                             <i class="bi bi-geo-alt"></i> Alamat

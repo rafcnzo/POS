@@ -16,8 +16,7 @@
                         </div>
                     </div>
                     <div class="dashboard-date">
-                        <i class="bi bi-calendar-event"></i>
-                        <span id="currentDate"></span>
+                        Halo, <strong>{{ Auth::user()->name }}</strong>! Selamat datang kembali di dashboard.
                     </div>
                 </div>
             </div>
@@ -29,11 +28,13 @@
                         <i class="bi bi-cash-coin"></i>
                     </div>
                     <div class="stat-info">
-                        <h3 class="stat-value">Rp 45.250.000</h3>
+                        <h3 class="stat-value">Rp {{ number_format($totalSales ?? 45250000, 0, ',', '.') }}</h3>
                         <p class="stat-label">Total Penjualan Bulan Ini</p>
                         <div class="stat-trend trend-up">
                             <i class="bi bi-arrow-up"></i>
-                            <span>12.5% dari bulan lalu</span>
+                            <span>
+                                {{ $salesGrowth ?? '12.5%' }} dari bulan lalu
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -43,11 +44,13 @@
                         <i class="bi bi-receipt"></i>
                     </div>
                     <div class="stat-info">
-                        <h3 class="stat-value">1,247</h3>
+                        <h3 class="stat-value">{{ number_format($totalTransactions ?? 1247) }}</h3>
                         <p class="stat-label">Total Transaksi</p>
                         <div class="stat-trend trend-up">
                             <i class="bi bi-arrow-up"></i>
-                            <span>8.3% dari bulan lalu</span>
+                            <span>
+                                {{ $transactionsGrowth ?? '8.3%' }} dari bulan lalu
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -60,8 +63,6 @@
                         <h3 class="stat-value">{{ $totalIngredients ?? 45 }}</h3>
                         <p class="stat-label">Jenis Bahan Baku</p>
                         <div class="stat-trend trend-neutral">
-                            <i class="bi bi-dash"></i>
-                            <span>Stabil</span>
                         </div>
                     </div>
                 </div>
@@ -113,46 +114,21 @@
                         </div>
                         <div class="data-card-body">
                             <div class="top-products-list">
-                                <div class="top-product-item">
-                                    <div class="product-rank rank-1">1</div>
-                                    <div class="product-info">
-                                        <div class="product-name">Nasi Goreng Special</div>
-                                        <div class="product-sales">285 porsi</div>
+                                @forelse(($topProducts ?? []) as $i => $product)
+                                    <div class="top-product-item">
+                                        <div class="product-rank {{ $i < 3 ? 'rank-' . ($i + 1) : '' }}">{{ $i + 1 }}
+                                        </div>
+                                        <div class="product-info">
+                                            <div class="product-name">{{ $product['name'] }}</div>
+                                            <div class="product-sales">{{ number_format($product['sales']) }}
+                                                {{ $product['unit'] }}</div>
+                                        </div>
+                                        <div class="product-revenue">Rp
+                                            {{ number_format($product['revenue'], 0, ',', '.') }}</div>
                                     </div>
-                                    <div class="product-revenue">Rp 7.125.000</div>
-                                </div>
-                                <div class="top-product-item">
-                                    <div class="product-rank rank-2">2</div>
-                                    <div class="product-info">
-                                        <div class="product-name">Ayam Bakar Madu</div>
-                                        <div class="product-sales">234 porsi</div>
-                                    </div>
-                                    <div class="product-revenue">Rp 7.020.000</div>
-                                </div>
-                                <div class="top-product-item">
-                                    <div class="product-rank rank-3">3</div>
-                                    <div class="product-info">
-                                        <div class="product-name">Soto Ayam</div>
-                                        <div class="product-sales">198 porsi</div>
-                                    </div>
-                                    <div class="product-revenue">Rp 3.960.000</div>
-                                </div>
-                                <div class="top-product-item">
-                                    <div class="product-rank">4</div>
-                                    <div class="product-info">
-                                        <div class="product-name">Es Teh Manis</div>
-                                        <div class="product-sales">567 gelas</div>
-                                    </div>
-                                    <div class="product-revenue">Rp 2.835.000</div>
-                                </div>
-                                <div class="top-product-item">
-                                    <div class="product-rank">5</div>
-                                    <div class="product-info">
-                                        <div class="product-name">Gado-Gado</div>
-                                        <div class="product-sales">156 porsi</div>
-                                    </div>
-                                    <div class="product-revenue">Rp 2.340.000</div>
-                                </div>
+                                @empty
+                                    <div>Tidak ada data menu terlaris.</div>
+                                @endforelse
                             </div>
                         </div>
                     </div>
@@ -169,60 +145,29 @@
                                 <i class="bi bi-exclamation-triangle-fill"></i>
                                 <span>Peringatan Stok</span>
                             </div>
-                            <span class="badge-alert">5 item</span>
+                            <span class="badge-alert">
+                                {{ $stockAlertsCount ?? 0 }} item
+                            </span>
                         </div>
                         <div class="data-card-body">
                             <div class="alert-list">
-                                <div class="alert-item alert-danger-item">
-                                    <div class="alert-icon">
-                                        <i class="bi bi-exclamation-circle-fill"></i>
+                                @forelse(($stockAlerts ?? []) as $alert)
+                                    <div
+                                        class="alert-item {{ $alert['critical'] ? 'alert-danger-item' : 'alert-warning-item' }}">
+                                        <div class="alert-icon">
+                                            <i
+                                                class="bi {{ $alert['critical'] ? 'bi-exclamation-circle-fill' : 'bi-exclamation-triangle-fill' }}"></i>
+                                        </div>
+                                        <div class="alert-content">
+                                            <div class="alert-title">{{ $alert['name'] }}</div>
+                                            <div class="alert-desc">{{ $alert['desc'] }}</div>
+                                        </div>
+                                        <div class="alert-stock {{ $alert['critical'] ? 'stock-critical' : 'stock-low' }}">
+                                            {{ $alert['qty'] }}</div>
                                     </div>
-                                    <div class="alert-content">
-                                        <div class="alert-title">Tepung Terigu</div>
-                                        <div class="alert-desc">Stok tinggal 5 kg - Segera order!</div>
-                                    </div>
-                                    <div class="alert-stock stock-critical">5 kg</div>
-                                </div>
-                                <div class="alert-item alert-warning-item">
-                                    <div class="alert-icon">
-                                        <i class="bi bi-exclamation-triangle-fill"></i>
-                                    </div>
-                                    <div class="alert-content">
-                                        <div class="alert-title">Minyak Goreng</div>
-                                        <div class="alert-desc">Stok menipis - Perlu restock</div>
-                                    </div>
-                                    <div class="alert-stock stock-low">12 L</div>
-                                </div>
-                                <div class="alert-item alert-warning-item">
-                                    <div class="alert-icon">
-                                        <i class="bi bi-exclamation-triangle-fill"></i>
-                                    </div>
-                                    <div class="alert-content">
-                                        <div class="alert-title">Beras Premium</div>
-                                        <div class="alert-desc">Stok menipis - Perlu restock</div>
-                                    </div>
-                                    <div class="alert-stock stock-low">18 kg</div>
-                                </div>
-                                <div class="alert-item alert-danger-item">
-                                    <div class="alert-icon">
-                                        <i class="bi bi-exclamation-circle-fill"></i>
-                                    </div>
-                                    <div class="alert-content">
-                                        <div class="alert-title">Gula Pasir</div>
-                                        <div class="alert-desc">Stok kritis - Order sekarang!</div>
-                                    </div>
-                                    <div class="alert-stock stock-critical">3 kg</div>
-                                </div>
-                                <div class="alert-item alert-warning-item">
-                                    <div class="alert-icon">
-                                        <i class="bi bi-exclamation-triangle-fill"></i>
-                                    </div>
-                                    <div class="alert-content">
-                                        <div class="alert-title">Kecap Manis</div>
-                                        <div class="alert-desc">Stok menipis - Perlu restock</div>
-                                    </div>
-                                    <div class="alert-stock stock-low">8 btl</div>
-                                </div>
+                                @empty
+                                    <div>Tidak ada peringatan stok.</div>
+                                @endforelse
                             </div>
                         </div>
                     </div>
@@ -239,62 +184,32 @@
                         </div>
                         <div class="data-card-body">
                             <div class="activity-list">
-                                <div class="activity-item">
-                                    <div class="activity-icon status-pending">
-                                        <i class="bi bi-clock"></i>
+                                @forelse(($latestPurchaseOrders ?? []) as $po)
+                                    <div class="activity-item">
+                                        <div class="activity-icon status-{{ strtolower($po['status']) }}">
+                                            @if (trim(strtolower($po['status'])) == 'diproses')
+                                                <i class="bi bi-clock"></i>
+                                            @elseif(trim(strtolower($po['status'])) == 'diterima')
+                                                <i class="bi bi-check2-square"></i>
+                                            @else
+                                                <i class="bi bi-question-circle"></i>
+                                            @endif
+                                        </div>
+                                        <div class="activity-content">
+                                            <div class="activity-title">{{ $po['code'] }} - {{ $po['vendor'] }}</div>
+                                            <div class="activity-desc">{{ $po['desc'] }}</div>
+                                            <div class="activity-time">{{ $po['time'] }}</div>
+                                        </div>
+                                        <div class="activity-status">
+                                            <span
+                                                class="badge-status status-{{ strtolower($po['status']) }}">{{ $po['status'] }}</span>
+                                            <div class="activity-amount">Rp
+                                                {{ number_format($po['amount'], 0, ',', '.') }}</div>
+                                        </div>
                                     </div>
-                                    <div class="activity-content">
-                                        <div class="activity-title">PO#12345 - PT Maju Jaya</div>
-                                        <div class="activity-desc">Tepung, Minyak, Gula (15 items)</div>
-                                        <div class="activity-time">2 jam yang lalu</div>
-                                    </div>
-                                    <div class="activity-status">
-                                        <span class="badge-status status-pending">Pending</span>
-                                        <div class="activity-amount">Rp 5.450.000</div>
-                                    </div>
-                                </div>
-                                <div class="activity-item">
-                                    <div class="activity-icon status-approved">
-                                        <i class="bi bi-check-circle"></i>
-                                    </div>
-                                    <div class="activity-content">
-                                        <div class="activity-title">PO#12344 - CV Segar Sentosa</div>
-                                        <div class="activity-desc">Sayuran segar (8 items)</div>
-                                        <div class="activity-time">5 jam yang lalu</div>
-                                    </div>
-                                    <div class="activity-status">
-                                        <span class="badge-status status-approved">Approved</span>
-                                        <div class="activity-amount">Rp 2.340.000</div>
-                                    </div>
-                                </div>
-                                <div class="activity-item">
-                                    <div class="activity-icon status-received">
-                                        <i class="bi bi-box-check"></i>
-                                    </div>
-                                    <div class="activity-content">
-                                        <div class="activity-title">PO#12343 - UD Berkah</div>
-                                        <div class="activity-desc">Daging ayam, bumbu (12 items)</div>
-                                        <div class="activity-time">1 hari yang lalu</div>
-                                    </div>
-                                    <div class="activity-status">
-                                        <span class="badge-status status-received">Received</span>
-                                        <div class="activity-amount">Rp 8.750.000</div>
-                                    </div>
-                                </div>
-                                <div class="activity-item">
-                                    <div class="activity-icon status-approved">
-                                        <i class="bi bi-check-circle"></i>
-                                    </div>
-                                    <div class="activity-content">
-                                        <div class="activity-title">PO#12342 - PT Indo Rasa</div>
-                                        <div class="activity-desc">Beras, kecap, saus (10 items)</div>
-                                        <div class="activity-time">2 hari yang lalu</div>
-                                    </div>
-                                    <div class="activity-status">
-                                        <span class="badge-status status-approved">Approved</span>
-                                        <div class="activity-amount">Rp 4.200.000</div>
-                                    </div>
-                                </div>
+                                @empty
+                                    <div>Tidak ada PO terbaru.</div>
+                                @endforelse
                             </div>
                         </div>
                     </div>
@@ -306,7 +221,9 @@
                 <div class="quick-stat-item">
                     <i class="bi bi-lightning-charge-fill"></i>
                     <div class="quick-stat-info">
-                        <div class="quick-stat-value">Rp 125.000</div>
+                        <div class="quick-stat-value">
+                            Rp {{ number_format($energyCost ?? 125000, 0, ',', '.') }}
+                        </div>
                         <div class="quick-stat-label">Biaya Energi/Bulan</div>
                     </div>
                 </div>
@@ -320,14 +237,15 @@
                 <div class="quick-stat-item">
                     <i class="bi bi-graph-up-arrow"></i>
                     <div class="quick-stat-info">
-                        <div class="quick-stat-value">Rp 36.300</div>
+                        <div class="quick-stat-value">Rp {{ number_format($averageTransaction ?? 36300, 0, ',', '.') }}
+                        </div>
                         <div class="quick-stat-label">Rata-rata Transaksi</div>
                     </div>
                 </div>
                 <div class="quick-stat-item">
                     <i class="bi bi-clock-fill"></i>
                     <div class="quick-stat-info">
-                        <div class="quick-stat-value">18:30</div>
+                        <div class="quick-stat-value">{{ $busiestHour ?? '18:30' }}</div>
                         <div class="quick-stat-label">Jam Tersibuk</div>
                     </div>
                 </div>
@@ -338,16 +256,6 @@
 @push('script')
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Display current date
-            const dateElement = document.getElementById('currentDate');
-            const now = new Date();
-            const options = {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-            };
-            dateElement.textContent = now.toLocaleDateString('id-ID', options);
 
             // Sales Chart
             const ctx = document.getElementById('salesChart');
@@ -355,10 +263,10 @@
                 new Chart(ctx, {
                     type: 'line',
                     data: {
-                        labels: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'],
+                        labels: @json($salesChartLabels),
                         datasets: [{
                             label: 'Penjualan',
-                            data: [6200000, 5800000, 6500000, 7100000, 6800000, 8200000, 7500000],
+                            data: @json($salesChartData),
                             borderColor: '#667eea',
                             backgroundColor: 'rgba(102, 126, 234, 0.1)',
                             tension: 0.4,
@@ -371,7 +279,7 @@
                             pointBorderWidth: 2
                         }, {
                             label: 'Target',
-                            data: [6000000, 6000000, 6000000, 6000000, 6000000, 7000000, 7000000],
+                            data: @json($salesChartTarget),
                             borderColor: '#28a745',
                             backgroundColor: 'rgba(40, 167, 69, 0.05)',
                             tension: 0.4,

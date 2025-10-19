@@ -47,6 +47,10 @@ Route::middleware(['auth'])->prefix('acc')->name('acc.')->group(function () {
         Route::post('/suppliers/submit', [AccountingController::class, 'suppliersSubmit'])->name('suppliers.submit');
         Route::delete('/suppliers/{supplier}', [AccountingController::class, 'suppliersDestroy'])->name('suppliers.destroy');
         Route::get('/credit-limit-monitoring', [AccountingController::class, 'creditLimitMonitoring'])->name('suppliers.credit_limit_monitoring');
+
+        Route::get('/laporan-penjualan', [AccountingController::class, 'salesReport'])->name('laporan-penjualan');
+        Route::get('/laporan-penjualan/cetak', [AccountingController::class, 'salesReportPdf'])->name('laporan-penjualan.export.pdf');
+        Route::get('/laporan-penjualan/export', [AccountingController::class, 'salesReportXls'])->name('laporan-penjualan.export.excel');
     });
 });
 
@@ -116,7 +120,46 @@ Route::middleware(['auth'])->prefix('cashier')->name('cashier.')->group(function
         Route::get('/payment/{sale}', [CashierController::class, 'showPaymentPage'])->name('payment.page');
         Route::post('/payment/{sale}/process', [CashierController::class, 'processPayment'])->name('payment.process');
         Route::post('/payment/{sale}/void', [CashierController::class, 'voidTransaction'])->name('payment.void');
+
+        Route::get('/history', [CashierController::class, 'historyIndex'])->name('history');
+        Route::get('/history/{sale}', [CashierController::class, 'historyShow'])->name('history.show');
     });
 });
 
+// Route::get('/test-printers', function () {
+//     try {
+//         $printers = System::printers();
+//         return response()->json([
+//             'success'  => true,
+//             'count'    => count($printers),
+//             'printers' => collect($printers)->map(fn($p) => [
+//                 'name'        => $p->name,
+//                 'displayName' => $p->displayName,
+//                 'status'      => $p->status ?? 'unknown',
+//             ]),
+//         ]);
+//     } catch (\Exception $e) {
+//         return response()->json([
+//             'success' => false,
+//             'error'   => $e->getMessage(),
+//         ]);
+//     }
+// });
+
+// // Test print sample
+// Route::get('/test-print', function () {
+//     try {
+//         $html = '<html><body style="font-family: monospace; padding: 20px;">
+//             <h1>TEST PRINT</h1>
+//             <p>Ini adalah test printing dari NativePHP</p>
+//             <p>Tanggal: ' . now()->format('d/m/Y H:i:s') . '</p>
+//         </body></html>';
+
+//         System::print($html);
+
+//         return 'Printing... Check your printer!';
+//     } catch (\Exception $e) {
+//         return 'Error: ' . $e->getMessage();
+//     }
+// });
 require __DIR__ . '/auth.php';

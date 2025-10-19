@@ -382,11 +382,6 @@ class CashierController extends Controller
         }
     }
 
-    /**
-     * Print customer receipt (struk).
-     * @param  int $id
-     * @return \Illuminate\Contracts\View\View|\Illuminate\Http\Response
-     */
     public function printCustomerReceipt($id)
     {
         $sale = Sale::with([
@@ -402,17 +397,24 @@ class CashierController extends Controller
         try {
             $html = view('cashier._print_cust', compact('sale', 'settings'))->render();
 
-            if ($printerName) {
-                PrintReceipt::dispatch($html, $printerName);
-                return "<h1>Berhasil!</h1><p>Struk pelanggan telah dikirim ke printer: <strong>{$printerName}</strong></p><script>setTimeout(window.close, 2000);</script>";
+            $isVirtualPrinter = in_array($printerName, ['Nitro PDF Creator', 'Microsoft Print to PDF']);
+
+            if ($printerName && ! $isVirtualPrinter) {
+                Printing::printer($printerName)->html($html)->send();
+                return response()->json(['success' => true, 'message' => "Struk dikirim ke printer: {$printerName}"]);
+
             } else {
                 return view('cashier._print_cust', compact('sale', 'settings'));
             }
+
         } catch (\Exception $e) {
-            return "<h1>Gagal!</h1><p>Error: " . $e->getMessage() . "</p>";
+            return response()->json(['success' => false, 'message' => 'Gagal mencetak: ' . $e->getMessage()], 500);
         }
     }
 
+    /**
+     * Print kitchen receipt (struk dapur).
+     */
     public function printKitchenReceipt($id)
     {
         $sale = Sale::with([
@@ -428,15 +430,52 @@ class CashierController extends Controller
         try {
             $html = view('cashier._print_kitchen', compact('sale', 'settings'))->render();
 
-            if ($printerName) {
+            $isVirtualPrinter = in_array($printerName, ['Nitro PDF Creator', 'Microsoft Print to PDF']);
+
+            if ($printerName && ! $isVirtualPrinter) {
                 PrintReceipt::dispatch($html, $printerName);
 
-                return "<h1>Berhasil!</h1><p>Struk dapur telah dikirim ke printer: <strong>{$printerName}</strong></p><script>setTimeout(window.close, 2000);</script>";
+                return response()->json([
+                    'success' => true,
+                    'message' => "Struk dapur sedang dicetak ke printer: {$printerName}",
+                ]);
             } else {
                 return view('cashier._print_kitchen', compact('sale', 'settings'));
             }
         } catch (\Exception $e) {
-            return "<h1>Gagal!</h1><p>Error: " . $e->getMessage() . "</p>";
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mencetak: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get list of available printers (untuk settings).
+     */
+    public function getPrinters()
+    {
+        try {
+            $printers = \Native\Laravel\Facades\System::printers();
+
+            $printerList = collect($printers)->map(function ($printer) {
+                return [
+                    'name'        => $printer->name,
+                    'displayName' => $printer->displayName,
+                    'status'      => $printer->status ?? 'unknown',
+                    'isDefault'   => $printer->isDefault ?? false,
+                ];
+            });
+
+            return response()->json([
+                'success'  => true,
+                'printers' => $printerList,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
         }
     }
 
@@ -447,12 +486,77 @@ class CashierController extends Controller
         }
 
         $taxPercentage = (float) (Setting::where('key', 'tax')->value('value') ?? 0);
-        $taxAmount = $sale->subtotal * ($taxPercentage / 100);
+        $taxAmount     = $sale->subtotal * ($taxPercentage / 100);
 
         return view('cashier.payment', [
             'sale'          => $sale,
             'taxPercentage' => $taxPercentage,
-            'taxAmount' => $taxAmount,
+            'taxAmount'     => $taxAmount,
+        ]);
+    }
+
+    public function historyIndex(Request $request)
+    {
+        $request->validate([
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date|after_or_equal:start_date',
+            'search'     => 'nullable|string',
+        ]);
+
+        $salesQuery = Sale::with('user')
+            ->where('status', 'completed')
+            ->latest();
+
+        if ($request->filled('start_date') && $request->filled('end_date')) {
+            $startDate = Carbon::parse($request->start_date)->startOfDay();
+            $endDate   = Carbon::parse($request->end_date)->endOfDay();
+            $salesQuery->whereBetween('created_at', [$startDate, $endDate]);
+        }
+
+        if ($request->filled('search')) {
+            $search = trim($request->search);
+
+            $salesQuery->where(function ($query) use ($search) {
+                $query->where(function ($sub) use ($search) {
+                    if (mb_strlen($search) >= 3) {
+                        $sub->where('transaction_code', '=', $search)
+                            ->orWhere('transaction_code', 'like', $search . '%');
+                    } else {
+                        $sub->where('transaction_code', 'like', '%' . $search . '%');
+                    }
+                })
+                // Pencarian Nama Kasir
+                ->orWhereHas('user', function ($q) use ($search) {
+                    if (mb_strlen($search) >= 3) {
+                        $q->where('name', '=', $search)
+                          ->orWhere('name', 'like', $search . '%');
+                    } else {
+                        $q->where('name', 'like', '%' . $search . '%');
+                    }
+                });
+            });
+        
+        }
+
+        $sales = $salesQuery->paginate(10);
+        return view('cashier.history.index', compact('sales'));
+    }
+
+    public function historyShow(Sale $sale)
+    {
+        $sale->load([
+            'user:id,name',                             
+            'items.menuItem:id,name',                   
+            'items.selectedModifiers.modifier:id,name', 
+            'payments',
+        ]);
+
+        if (! $sale) {
+            return response()->json(['status' => 'error', 'message' => 'Transaksi tidak ditemukan.'], 404);
+        }
+        return response()->json([
+            'status' => 'success',
+            'sale'   => $sale,
         ]);
     }
 }

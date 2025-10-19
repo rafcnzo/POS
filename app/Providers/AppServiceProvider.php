@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Pagination\Paginator;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -64,5 +65,8 @@ class AppServiceProvider extends ServiceProvider
             Session::flush();                  // Buang semua session
             Session::put('fresh_start', true); // Tandai sudah reset
         }
+
+        Paginator::defaultView('layouts.pagination');
+        Paginator::defaultSimpleView('layouts.pagination');
     }
 }

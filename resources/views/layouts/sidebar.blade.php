@@ -91,6 +91,23 @@
                         <div class="menu-title">Monitoring Limit</div>
                     </a>
                 </li>
+                <li>
+                    <a href="#" class="has-arrow">
+                        <div class="parent-icon"><i class="bi bi-file-earmark-bar-graph"></i></div>
+                        <div class="menu-title">Laporan</div>
+                    </a>
+                    <ul>
+                        <li>
+                            <a href="{{ route('acc.laporan-penjualan') }}"><i class="bi bi-receipt-cutoff"></i> Laporan Penjualan</a>
+                        </li>
+                        {{-- Tambahkan item laporan lain di sini jika ada --}}
+                        <!--
+                        <li>
+                            <a href="#"><i class="bi bi-cash-coin"></i> Laporan Pembelian</a>
+                        </li>
+                        -->
+                    </ul>
+                </li>
             @endhasanyrole
             @hasanyrole('Super Admin|Purchasing')
                 <li class="menu-label">Purchasing</li>

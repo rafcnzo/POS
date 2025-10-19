@@ -1564,17 +1564,12 @@ a {
     flex-shrink: 0;
 }
 
-.status-pending {
+.status-diproses {
     background: #fff3cd;
     color: #856404;
 }
 
-.status-approved {
-    background: #d4edda;
-    color: #155724;
-}
-
-.status-received {
+.status-diterima {
     background: #d1ecf1;
     color: #0c5460;
 }
@@ -1669,4 +1664,18 @@ a {
     .quick-stats-footer {
         grid-template-columns: repeat(2, 1fr);
     }
+}
+
+.header-datetime {
+    /* Sesuaikan warna ini dengan tema header Anda */
+    color: #333; /* Ganti ke #fff jika header Anda gelap */
+    font-size: 0.95rem;
+    font-weight: 500;
+    opacity: 0.9;
+}
+
+.header-datetime i {
+    font-size: 1rem;
+    position: relative;
+    top: 1px;
 }

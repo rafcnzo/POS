@@ -20,13 +20,101 @@
             opacity: 0;
             pointer-events: none;
         }
+
+        #pageLoadingOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(2px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 99999;
+            opacity: 1;
+            visibility: visible;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+
+        #pageLoadingOverlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        /* Loading Box - Kecil di Tengah */
+        .loading-box {
+            background: #fff;
+            padding: 2rem 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            animation: fadeInScale 0.4s ease;
+        }
+
+        @keyframes fadeInScale {
+            from {
+                opacity: 0;
+                transform: scale(0.9) translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        /* Pulse Circle Spinner */
+        .spinner-pulse {
+            width: 50px;
+            height: 50px;
+            background: #0d6efd;
+            border-radius: 50%;
+            margin: 0 auto 1rem;
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+
+            50% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .loading-text {
+            color: #495057;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin: 0;
+            animation: textFade 1.5s ease-in-out infinite;
+        }
+
+        @keyframes textFade {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+        }
     </style>
 </head>
 
 <body>
-    <div id="loadingOverlay" class="loading-overlay">
-        <div class="loading-content">
-            <div class="loading-spinner"></div>
+    <div id="pageLoadingOverlay">
+        <div class="loading-box">
+            <div class="spinner-pulse"></div>
             <p class="loading-text">Loading...</p>
         </div>
     </div>
@@ -45,26 +133,41 @@
     </div>
 
     <script>
-        function showLoading(text = 'Loading...') {
-            const overlay = document.getElementById('loadingOverlay');
-            const loadingText = overlay.querySelector('.loading-text');
-
-            if (loadingText) {
-                loadingText.textContent = text;
+        function showLoading(message = 'Memuat data...') {
+            const overlay = document.getElementById('pageLoadingOverlay');
+            if (overlay) {
+                const textEl = overlay.querySelector('.loading-text');
+                if (textEl) textEl.textContent = message;
+                overlay.classList.remove('hidden');
             }
-
-            overlay.classList.add('show');
-            document.body.style.overflow = 'hidden';
         }
 
         function hideLoading() {
-            const overlay = document.getElementById('loadingOverlay');
-            overlay.classList.remove('show');
-            document.body.style.overflow = '';
+            const overlay = document.getElementById('pageLoadingOverlay');
+            if (overlay) {
+                overlay.classList.add('hidden');
+            }
         }
 
+        // Auto hide saat page selesai load
         window.addEventListener('load', function() {
-            hideLoading();
+            setTimeout(() => {
+                hideLoading();
+            }, 300);
+        });
+
+        // Show loading saat navigasi ke halaman lain
+        document.addEventListener('DOMContentLoaded', function() {
+            // Show loading saat klik link navigasi
+            const links = document.querySelectorAll('a:not([target="_blank"]):not([href^="#"]):not(.no-loading)');
+            links.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    const href = this.getAttribute('href');
+                    if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
+                        showLoading('Memuat halaman...');
+                    }
+                });
+            });
         });
     </script>
 

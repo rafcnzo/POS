@@ -1,5 +1,3 @@
-<!-- Section: Design Block -->
-
 <head>
     <title>Login</title>
 
@@ -131,6 +129,12 @@
             box-shadow: 0 4px 12px rgba(13, 110, 253, 0.4);
         }
 
+        .btn-primary:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .form-label {
             font-weight: 500;
             margin-bottom: 0.5rem;
@@ -147,6 +151,119 @@
 
         .shadow-5-strong {
             box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.3);
+        }
+
+        /* Loading Overlay untuk Login Card */
+        .login-loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(3px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            border-radius: 1rem;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+
+        .login-loading-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .login-loading-content {
+            text-align: center;
+            animation: fadeInScale 0.4s ease;
+        }
+
+        @keyframes fadeInScale {
+            from {
+                opacity: 0;
+                transform: scale(0.9) translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        /* Spinner */
+        .spinner-pulse {
+            width: 50px;
+            height: 50px;
+            background: #0d6efd;
+            border-radius: 50%;
+            margin: 0 auto 1rem;
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+
+            50% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .login-loading-text {
+            color: #495057;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin: 0;
+            animation: textFade 1.5s ease-in-out infinite;
+        }
+
+        @keyframes textFade {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+        }
+
+        /* Button Loading State */
+        .btn-loading {
+            position: relative;
+            color: transparent !important;
+            pointer-events: none;
+        }
+
+        .btn-loading::after {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            top: 50%;
+            left: 50%;
+            margin-left: -8px;
+            margin-top: -8px;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
         }
     </style>
 </head>
@@ -169,32 +286,21 @@
                     <div id="radius-shape-1" class="position-absolute shadow-5-strong"></div>
                     <div id="radius-shape-2" class="position-absolute shadow-5-strong"></div>
 
-                    <div class="card bg-glass login-card">
+                    <div class="card bg-glass login-card position-relative">
                         <div class="card-body px-4 py-5 px-md-5">
                             @if ($errors->any())
-                                <div
-                                    style="color: red; background-color: #fee; border: 1px solid red; padding: 10px; margin: 10px 0;">
-                                    <strong>Terjadi Kesalahan:</strong>
-                                    <ul>
+                                <div class="alert alert-danger mb-4">
+                                    <div class="fw-bold">Gagal Login!</div>
+                                    <ul class="mb-0">
                                         @foreach ($errors->all() as $error)
                                             <li>{{ $error }}</li>
                                         @endforeach
                                     </ul>
                                 </div>
                             @endif
-                            <form method="POST" action="{{ route('login') }}">
-                                @csrf
 
-                                @if ($errors->any())
-                                    <div class="alert alert-danger mb-4">
-                                        <div class="fw-bold">Gagal Login!</div>
-                                        <ul class="mb-0">
-                                            @foreach ($errors->all() as $error)
-                                                <li>{{ $error }}</li>
-                                            @endforeach
-                                        </ul>
-                                    </div>
-                                @endif
+                            <form method="POST" action="{{ route('login') }}" id="loginForm">
+                                @csrf
 
                                 <div class="mb-4">
                                     <label class="form-label" for="email">Email</label>
@@ -222,16 +328,44 @@
                                         Forgot your password?
                                     </a>
 
-                                    <button type="submit" class="btn btn-primary w-100 w-sm-auto">
+                                    <button type="submit" class="btn btn-primary w-100 w-sm-auto" id="loginBtn">
                                         Log in
                                     </button>
                                 </div>
                             </form>
+                        </div>
+
+                        <!-- Loading Overlay -->
+                        <div class="login-loading-overlay" id="loginLoadingOverlay">
+                            <div class="login-loading-content">
+                                <div class="spinner-pulse"></div>
+                                <p class="login-loading-text">Memproses login...</p>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </section>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginForm = document.getElementById('loginForm');
+            const loginBtn = document.getElementById('loginBtn');
+            const loadingOverlay = document.getElementById('loginLoadingOverlay');
+
+            loginForm.addEventListener('submit', function(e) {
+                // Show loading overlay
+                if (loadingOverlay) {
+                    loadingOverlay.classList.add('show');
+                }
+
+                // Cukup disable button aja
+                if (loginBtn) {
+                    loginBtn.disabled = true;
+                    loginBtn.classList.add('btn-loading');
+                }
+            });
+        });
+    </script>
 </body>
-<!-- Section: Design Block -->

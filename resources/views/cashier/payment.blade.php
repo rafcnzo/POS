@@ -333,7 +333,6 @@
                     .then(data => {
                         hideLoading();
                         if (data.status === 'success') {
-
                             Swal.fire({
                                 title: 'Transaksi Berhasil!',
                                 text: data.message,
@@ -345,19 +344,70 @@
                                 cancelButtonText: 'Selesai',
 
                                 preConfirm: () => {
-                                    window.open(
-                                        "{{ route('cashier.print.customer', ['sale' => '__SALE_ID__']) }}"
-                                        .replace('__SALE_ID__', data.sale_id), '_blank'
-                                    );
-                                    return false; // <-- Ini kuncinya!
+                                    return fetch("{{ url('cashier/sales') }}/" + data.sale_id +
+                                            "/print/customer")
+                                        .then(response => {
+                                            if (response.headers.get("content-type")?.includes(
+                                                    "text/html")) {
+                                                return response.text().then(html => {
+                                                    const printWindow = window.open('',
+                                                        '_blank');
+                                                    printWindow.document.write(html);
+                                                    printWindow.document.close();
+                                                });
+                                            }
+                                            return response
+                                                .json();
+                                        })
+                                        .then(printData => {
+                                            if (printData && printData.status === 'success') {
+                                                toastr.success(printData.message);
+                                            } else if (printData && printData.status ===
+                                                'error') {
+                                                Swal.showValidationMessage(printData.message);
+                                            }
+                                            return false;
+                                        })
+                                        .catch(() => {
+                                            Swal.showValidationMessage(
+                                                'Gagal menghubungi server cetak.');
+                                            return false;
+                                        });
                                 },
 
                                 preDeny: () => {
-                                    window.open(
-                                        "{{ route('cashier.print.kitchen', ['sale' => '__SALE_ID__']) }}"
-                                        .replace('__SALE_ID__', data.sale_id), '_blank'
-                                    );
-                                    return false; // <-- Ini kuncinya!
+                                    return fetch("{{ url('cashier/sales') }}/" + data.sale_id +
+                                            "/print/kitchen")
+                                        .then(response => {
+                                            if (response.headers.get("content-type")?.includes(
+                                                    "text/html")) {
+                                                return response.text().then(html => {
+                                                    const printWindow = window.open('',
+                                                        '_blank');
+                                                    printWindow.document.write(html);
+                                                    printWindow.document.close();
+                                                });
+                                            }
+                                            return response
+                                        .json(); // Jika server mengembalikan JSON
+                                        })
+                                        .then(printData => {
+                                            if (printData) {
+                                                if (printData.success ===
+                                                    true) { // Gunakan 'success'
+                                                    toastr.success(printData.message);
+                                                } else {
+                                                    Swal.showValidationMessage(printData
+                                                        .message);
+                                                }
+                                            }
+                                            return false; // Mencegah modal utama tertutup
+                                        })
+                                        .catch(() => {
+                                            Swal.showValidationMessage(
+                                                'Gagal menghubungi server cetak.');
+                                            return false;
+                                        });
                                 }
 
                             }).then((result) => {
@@ -372,8 +422,7 @@
                     })
                     .catch(error => {
                         hideLoading();
-                        Swal.fire('Error!', 'Tidak dapat terhubung ke server. Silakan coba lagi.', 'error');
-                        console.error('Fetch Error:', error);
+                        Swal.fire('Error!', 'Tidak dapat terhubung ke server.', 'error');
                     });
             }
 

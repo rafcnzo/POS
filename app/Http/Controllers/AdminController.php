@@ -2,8 +2,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\DatabaseBackup;
+use App\Models\EnergyCost;
+use App\Models\Ingredient;
+use App\Models\MenuItem;
+use App\Models\PurchaseOrder;
+use App\Models\Sale;
+use App\Models\SaleItem;
 use App\Models\Setting;
+use App\Models\Supplier;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage as FacadesStorage;
 use Illuminate\Support\Str;
 use Native\Laravel\Facades\Window;
@@ -12,7 +21,208 @@ class AdminController extends Controller
 {
     public function index()
     {
-        return view('admin.index');
+        // Data jumlah bahan baku
+        $totalIngredients = Ingredient::count();
+        // Data PO menunggu
+        $pendingPO = PurchaseOrder::where('status', 'pending')->count();
+        // Total supplier
+        $totalSuppliers = Supplier::count();
+
+        // Hitung total penjualan bulan ini
+        $currentMonth  = now()->month;
+        $currentYear   = now()->year;
+        $previousMonth = now()->subMonth()->month;
+        $previousYear  = now()->subMonth()->year;
+
+        $totalSales = Sale::whereMonth('created_at', $currentMonth)
+            ->whereYear('created_at', $currentYear)
+            ->sum('total_amount');
+
+        // Hitung total penjualan bulan lalu
+        $totalSalesLastMonth = Sale::whereMonth('created_at', $previousMonth)
+            ->whereYear('created_at', $previousYear)
+            ->sum('total_amount');
+
+        // Hitung pertumbuhan penjualan (sales growth) dalam persen
+        if ($totalSalesLastMonth > 0) {
+            $salesGrowth = number_format((($totalSales - $totalSalesLastMonth) / $totalSalesLastMonth) * 100, 1) . '%';
+        } elseif ($totalSales > 0) {
+            $salesGrowth = '100%';
+        } else {
+            $salesGrowth = '0%';
+        }
+
+        // Total transaksi bulan ini
+        $totalTransactions = Sale::whereMonth('created_at', now()->month)
+            ->whereYear('created_at', now()->year)
+            ->count();
+
+        // Total transaksi bulan lalu
+        $previousMonth              = now()->subMonth()->month;
+        $previousYear               = now()->subMonth()->year;
+        $totalTransactionsLastMonth = Sale::whereMonth('created_at', $previousMonth)
+            ->whereYear('created_at', $previousYear)
+            ->count();
+
+        // Pertumbuhan transaksi (transactions growth) dalam persen
+        if ($totalTransactionsLastMonth > 0) {
+            $transactionsGrowth = number_format((($totalTransactions - $totalTransactionsLastMonth) / $totalTransactionsLastMonth) * 100, 1) . '%';
+        } elseif ($totalTransactions > 0) {
+            $transactionsGrowth = '100%';
+        } else {
+            $transactionsGrowth = '0%';
+        }
+
+        $averageTransaction = 0;
+        if ($totalTransactions > 0) {
+            $averageTransaction = round(
+                Sale::whereMonth('created_at', now()->month)
+                    ->whereYear('created_at', now()->year)
+                    ->avg('total_amount'), 0
+            );
+        }
+
+        // Cari 5 menu (MenuItem) terlaris berdasarkan total quantity SaleItem bulan ini
+        $topProductsRaw = SaleItem::selectRaw('menu_item_id, SUM(quantity) as total_sold, SUM(subtotal) as total_revenue')
+            ->whereHas('sale', function ($q) {
+                $q->whereMonth('created_at', now()->month)
+                    ->whereYear('created_at', now()->year);
+            })
+            ->groupBy('menu_item_id')
+            ->orderByDesc('total_sold')
+            ->limit(5)
+            ->get();
+
+        $topProducts = [];
+        foreach ($topProductsRaw as $saleItem) {
+            $menuItem = MenuItem::find($saleItem->menu_item_id);
+            if ($menuItem) {
+                $topProducts[] = [
+                    'name'    => $menuItem->name,
+                    'sales'   => $saleItem->total_sold,
+                    'unit'    => $menuItem->unit ?? 'x terjual',
+                    'revenue' => $saleItem->total_revenue,
+                ];
+            }
+        }
+
+        $latestPurchaseOrders = PurchaseOrder::with(['supplier', 'items.ingredient'])
+            ->orderByDesc('created_at')
+            ->limit(5)
+            ->get()
+            ->map(function ($po) {
+                $items           = $po->items;
+                $ingredientNames = $items->pluck('ingredient.name')->take(3)->toArray();
+                $othersCount     = $items->count() - 3;
+                $desc            = implode(', ', $ingredientNames);
+                if ($othersCount > 0) {
+                    $desc .= ' (+' . $othersCount . ' lainnya)';
+                }
+                $desc = $desc ?: '-';
+                $time = $po->created_at ? $po->created_at->diffForHumans() : '-';
+
+                return [
+                    'code'   => $po->po_number,
+                    'vendor' => $po->supplier->name ?? '-',
+                    'desc'   => $desc . " ({$items->count()} items)",
+                    'time'   => $time,
+                    'status' => ucfirst($po->status),
+                    'amount' => $po->total_amount,
+                ];
+            })
+            ->toArray();
+
+        $stockAlertsCount = Ingredient::count();
+
+        $stockAlerts = Ingredient::orderBy('stock', 'asc')
+            ->limit(5)
+            ->get()
+            ->map(function ($ingredient) {
+                $critical = $ingredient->stock <= 0 || $ingredient->stock <= $ingredient->minimum_stock / 2;
+                return [
+                    'name'     => $ingredient->name,
+                    'desc'     => $critical
+                        ? 'Stok kritis - Order sekarang!'
+                        : 'Stok menipis - Perlu restock',
+                    'qty'      => $ingredient->stock . ' ' . $ingredient->unit,
+                    'critical' => $critical,
+                ];
+            })
+            ->toArray();
+
+        $energyCost = EnergyCost::whereMonth('created_at', now()->month)
+            ->whereYear('created_at', now()->year)
+            ->sum('cost');
+
+        $result = Sale::query()
+            ->select(
+                DB::raw("strftime('%H', created_at) as hour_of_day"),
+                DB::raw("COUNT(id) as sales_count")
+            )
+            ->where('status', 'completed')
+            ->groupBy('hour_of_day')
+            ->orderByDesc('sales_count')
+            ->first();
+
+        $busiestHour = null;
+
+        if ($result) {
+            $hour = (int) $result->hour_of_day;
+
+            $startTime = Carbon::createFromTime($hour)->format('H:i');
+            $endTime   = Carbon::createFromTime($hour + 1)->format('H:i');
+
+            $busiestHour = "{$startTime} - {$endTime}";
+        }
+
+        $salesChartLabels   = [];
+        $dateKeys = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $date       = now()->subDays($i);
+            $salesChartLabels[]   = $date->translatedFormat('D');
+            $dateKeys[] = $date->format('Y-m-d');
+        }
+
+        $salesData = Sale::query()
+            ->select(
+                DB::raw("strftime('%Y-%m-%d', created_at) as sale_date"),
+                DB::raw("SUM(total_amount) as daily_total")
+            )
+            ->where('status', 'completed')
+            ->where('created_at', '>=', now()->subDays(6)->startOfDay())
+            ->groupBy('sale_date')
+            ->get()
+            ->pluck('daily_total', 'sale_date');
+
+        $salesChartData = [];
+        foreach ($dateKeys as $date) {
+            $salesChartData[] = $salesData->get($date, 0);
+        }
+
+        $targetHarian     = (float) (Setting::where('key', 'daily_sales_target')->value('value') ?? 6000000);
+        $salesChartTarget = array_fill(0, 7, $targetHarian);
+
+        return view('admin.index', compact(
+            'totalIngredients',
+            'pendingPO',
+            'totalSuppliers',
+            'totalSales',
+            'totalSalesLastMonth',
+            'salesGrowth',
+            'totalTransactions',
+            'averageTransaction',
+            'totalTransactionsLastMonth',
+            'transactionsGrowth',
+            'topProducts',
+            'latestPurchaseOrders',
+            'stockAlerts',
+            'busiestHour',
+            'salesChartLabels',
+            'salesChartData',
+            'salesChartTarget',
+            'stockAlertsCount',
+            'energyCost'
+        ));
     }
 
     public function users_index()
@@ -121,29 +331,29 @@ class AdminController extends Controller
             if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
                 // Perintah untuk Windows
                 $output = shell_exec('wmic printer get name');
-                $lines = explode("\n", $output);
+                $lines  = explode("\n", $output);
                 // Parsing hasil dari wmic
                 foreach ($lines as $line) {
                     $trimmedLine = trim($line);
-                    if (!empty($trimmedLine) && $trimmedLine !== 'Name') {
+                    if (! empty($trimmedLine) && $trimmedLine !== 'Name') {
                         $printers[] = ['name' => $trimmedLine];
                     }
                 }
             } else {
                 // Perintah untuk macOS & Linux
                 $output = shell_exec('lpstat -p');
-                $lines = explode("\n", $output);
+                $lines  = explode("\n", $output);
                 // Parsing hasil dari lpstat
                 foreach ($lines as $line) {
                     if (strpos($line, 'printer') === 0) {
-                        $parts = explode(' ', $line);
+                        $parts      = explode(' ', $line);
                         $printers[] = ['name' => $parts[1]];
                     }
                 }
             }
         } catch (\Exception $e) {
             // Jika exec() gagal, setidaknya halaman tidak error
-            $printers = []; 
+            $printers = [];
         }
 
         return view('admin.settings.index', compact('settings', 'printers'));

@@ -2,6 +2,12 @@
     <div class="topbar d-flex align-items-center">
         <nav class="navbar navbar-expand">
             <div class="mobile-toggle-menu"><i class='bx bx-menu'></i></div>
+            <div class="header-datetime d-none d-md-flex align-items-center ms-3">
+                <i class="bi bi-calendar3 me-2"></i>
+                <span id="currentDate">Memuat tanggal...</span>
+                <i class="bi bi-clock ms-3 me-2"></i>
+                <span id="currentTime">Memuat jam...</span>
+            </div>
             <div class="top-menu ms-auto">
             </div>
             @php
@@ -41,3 +47,46 @@
         </nav>
     </div>
 </header>
+
+@push('script')
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+
+            function updateClock() {
+                const now = new Date();
+
+                // 1. Format Tanggal (Contoh: "Sabtu, 18 Oktober 2025")
+                const dateOptions = {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                };
+                const dateString = now.toLocaleDateString('id-ID', dateOptions);
+
+                // 2. Format Waktu (Contoh: "13:01:05")
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+                const timeString = `${hours}:${minutes}:${seconds}`;
+
+                // 3. Terapkan ke HTML
+                const dateEl = document.getElementById('currentDate');
+                const timeEl = document.getElementById('currentTime');
+
+                if (dateEl) {
+                    dateEl.textContent = dateString;
+                }
+                if (timeEl) {
+                    timeEl.textContent = timeString;
+                }
+            }
+
+            // Panggil fungsi sekali saat halaman dimuat
+            updateClock();
+
+            // Atur agar fungsi updateClock dipanggil setiap detik
+            setInterval(updateClock, 1000);
+        });
+    </script>
+@endpush
