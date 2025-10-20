@@ -6,19 +6,25 @@ use App\Models\Ingredient;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Modifier;
+use App\Models\Reservation;
 use App\Models\Sale;
 use App\Models\Setting;
+use App\Services\Printing;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\View;
+use Throwable;
 
 class CashierController extends Controller
 {
     public function index()
     {
         // Ambil seluruh menu item beserta ingredients-nya
-        $menuItems = MenuItem::with('ingredients', 'modifierGroups.modifiers')->get();
+        $menuItems             = MenuItem::with('ingredients', 'modifierGroups.modifiers')->get();
+        $authorizationPassword = Setting::where('key', 'authorization_password')->value('value');
 
         // Hitung stok yang dapat dijual untuk setiap menu item berdasarkan stok ingredients
         $menuItemsWithStock = $menuItems->map(function ($menuItem) {
@@ -67,9 +73,10 @@ class CashierController extends Controller
 
         // Kembalikan SEMUA data variabel ke view
         return view('cashier.index', [
-            'categories'         => $categories,
-            'menuItems'          => $menuItems,
-            'menuItemsWithStock' => $menuItemsWithStock,
+            'categories'            => $categories,
+            'menuItems'             => $menuItems,
+            'menuItemsWithStock'    => $menuItemsWithStock,
+            'authorizationPassword' => $authorizationPassword,
         ]);
     }
 
@@ -198,71 +205,114 @@ class CashierController extends Controller
     {
         $cartData = json_decode($request->cart_data, true);
 
+                                                                                    // --- 1. DEFINISIKAN $transactionType DI SINI (SEBELUM DB::transaction) ---
+        $transactionType = $request->input('transaction_type', Sale::TYPE_REGULAR); // Default 'regular'
+
+        if (! in_array($transactionType, [Sale::TYPE_REGULAR, Sale::TYPE_EMPLOYEE, Sale::TYPE_COMPLIMENTARY])) {
+            return back()->with('error', 'Tipe transaksi tidak valid.');
+        }
+
         if (empty($cartData)) {
             return back()->with('error', 'Keranjang tidak boleh kosong.');
         }
 
         try {
-            // Logika ini mirip dengan 'store', tapi hanya untuk membuat record awal
-            $sale = DB::transaction(function () use ($cartData) {
-                // Kalkulasi total
+            $sale = DB::transaction(function () use ($cartData, $transactionType, $request) {
                 $subtotal = 0;
                 foreach ($cartData as $itemData) {
-                    $menuItem       = MenuItem::find($itemData['menu_item_id']);
+                    $menuItem = MenuItem::find($itemData['menu_item_id']);
+                    if (! $menuItem) {
+                        throw new \Exception("Menu item ID {$itemData['menu_item_id']} tidak ditemukan.");
+                    }
+
                     $modifiersPrice = Modifier::whereIn('id', $itemData['modifier_ids'] ?? [])->sum('price');
                     $subtotal += ($menuItem->price + $modifiersPrice) * $itemData['quantity'];
                 }
 
-                // Buat record Sale dengan status PENDING
+                $totalAmountForSale = ($transactionType === Sale::TYPE_COMPLIMENTARY) ? 0 : $subtotal;
+
                 $sale = Sale::create([
-                    'transaction_code' => "TEMP-" . uniqid(), // Kode sementara
+                    'transaction_code' => "TEMP-" . uniqid(),
                     'user_id'          => Auth::id(),
+                    'type'             => $transactionType,
                     'subtotal'         => $subtotal,
-                    'total_amount'     => $subtotal, // Asumsi belum ada pajak
-                    'status'           => 'pending', // <-- STATUS PENTING
+                    'total_amount'     => $totalAmountForSale,
+                    'status'           => ($transactionType === Sale::TYPE_COMPLIMENTARY) ? 'completed' : 'pending',
                 ]);
 
-                // Simpan item & kurangi stok
                 foreach ($cartData as $itemData) {
-                    $menuItem          = MenuItem::with('ingredients')->find($itemData['menu_item_id']);
+                    $menuItem = MenuItem::with('ingredients')->find($itemData['menu_item_id']);
+                    if (! $menuItem) {
+                        continue;
+                    }
+
                     $selectedModifiers = Modifier::with('ingredient')->find($itemData['modifier_ids'] ?? []);
                     $modifiersPrice    = $selectedModifiers->sum('price');
-
-                    $saleItem = $sale->items()->create([
+                    $saleItem          = $sale->items()->create([
                         'menu_item_id' => $menuItem->id,
                         'quantity'     => $itemData['quantity'],
                         'price'        => $menuItem->price + $modifiersPrice,
                         'subtotal'     => ($menuItem->price + $modifiersPrice) * $itemData['quantity'],
                         'notes'        => $itemData['notes'] ?? null,
                     ]);
-
                     foreach ($selectedModifiers as $modifier) {
                         $saleItem->selectedModifiers()->create([
                             'modifier_id' => $modifier->id,
                             'price'       => $modifier->price,
                         ]);
                     }
-
                     foreach ($menuItem->ingredients as $ingredient) {
                         $totalToDecrement = $ingredient->pivot->quantity * $itemData['quantity'];
                         $ingredient->decrement('stock', $totalToDecrement);
                     }
-
                     foreach ($selectedModifiers as $modifier) {
                         if ($modifier->ingredient) {
-                            $totalToDecrement = $modifier->quantity_used * $itemData['quantity'];
+                            $totalToDecrement = ($modifier->quantity_used ?? 1) * $itemData['quantity'];
                             $modifier->ingredient->decrement('stock', $totalToDecrement);
                         }
                     }
                 }
 
+                if ($transactionType === Sale::TYPE_COMPLIMENTARY) {
+                    $date            = now()->format('Ymd');
+                    $latestSaleToday = Sale::where('transaction_code', 'like', "TRX-{$date}-%")->latest('id')->first();
+                    $nextNumber      = $latestSaleToday ? intval(substr($latestSaleToday->transaction_code, -3)) + 1 : 1;
+                    $transactionCode = "TRX-{$date}-" . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+
+                    $sale->update([
+                        'transaction_code' => $transactionCode,
+                        'customer_name'    => $request->input('customer_name', 'Complimentary'),
+                        'order_type'       => $request->input('order_type', 'dine_in'),
+                        'discount_amount'  => $subtotal,
+                        'tax_amount'       => 0,
+                        'total_amount'     => 0,
+                    ]);
+                }
+
                 return $sale;
             });
 
-            // Redirect ke halaman pembayaran dengan ID sale yang baru dibuat
-            return redirect()->route('cashier.payment.page', ['sale' => $sale->id]);
+            if ($sale->type === Sale::TYPE_COMPLIMENTARY) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'status'  => 'success',
+                        'message' => "Transaksi Complimentary #{$sale->transaction_code} berhasil disimpan.",
+                        'is_complimentary' => true, // <-- Flag untuk JS
+                        'sale_id'          => $sale->id,
+                        'transaction_code' => $sale->transaction_code,
+                        'redirect_url'     => route('cashier.index'), // <-- URL untuk redirect JS
+                    ]);
+                } else {
+                    return redirect()->route('cashier.index')
+                        ->with('success', "Transaksi Complimentary #{$sale->transaction_code} berhasil disimpan.");
+                }
 
-        } catch (\Throwable $e) {
+            } else {
+                return redirect()->route('cashier.payment.page', ['sale' => $sale->id]);
+            }
+
+        } catch (Throwable $e) {
+            \Log::error("Error startTransaction: " . $e->getMessage() . "\n" . $e->getTraceAsString());
             return back()->with('error', 'Gagal memulai transaksi: ' . $e->getMessage());
         }
     }
@@ -276,34 +326,58 @@ class CashierController extends Controller
         $validated = $request->validate([
             'customer_name'  => 'required|string|max:150',
             'order_type'     => 'required|string|in:dine_in,take_away',
-            'payment_method' => 'required|string',
+            'payment_method' => 'required|string', // Metode bayar customer (jika perlu)
             'table_number'   => 'nullable|string|max:50',
             'notes'          => 'nullable|string|max:500',
-            'cash_received'  => 'nullable|numeric',
+            'cash_received'  => 'nullable|numeric|required_if:payment_method,cash', // Wajib jika cash & ada sisa bayar
             'discount_type'  => 'nullable|in:fixed,percentage',
             'discount_value' => 'nullable|numeric|min:0',
+            'reservation_id' => 'nullable|exists:reservations,id',
         ]);
 
         try {
-            DB::transaction(function () use ($request, $sale) {
-                $subtotal       = $sale->subtotal;
-                $discountType   = $request->discount_type;
-                $discountValue  = $request->discount_value ?? 0;
-                $discountAmount = 0; // Ini yang akan disimpan
+            $result = DB::transaction(function () use ($request, $sale) {
 
-                if ($discountType === 'percentage') {
-                    $discountAmount = $subtotal * ($discountValue / 100);
-                } elseif ($discountType === 'fixed') {
-                    $discountAmount = $discountValue;
+                $transactionType = $sale->type; // 'regular', 'employee_meal', atau 'complimentary'
+
+                $reservation   = null;
+                $depositAmount = 0;
+                if ($transactionType !== Sale::TYPE_COMPLIMENTARY && $request->filled('reservation_id')) {
+                    $reservation = Reservation::find($request->reservation_id);
+                    if (! $reservation || ! in_array($reservation->status, ['confirmed', 'seated']) || $reservation->sale_id !== null) {
+                        throw new \Exception('Reservasi tidak valid atau sudah digunakan.');
+                    }
+                    $depositAmount = $reservation->deposit_amount;
                 }
-                $discountAmount = min($subtotal, $discountAmount);
 
-                $totalAfterDiscount = $subtotal - $discountAmount;
+                $subtotal         = $sale->subtotal; // Subtotal asli dari item
+                $discountAmount   = 0;
+                $taxAmount        = 0;
+                $finalTotalAmount = 0; // Total akhir yang HARUS dibayar
 
-                $taxPercentage   = (float) (Setting::where('key', 'tax')->value('value') ?? 0);
-                $taxAmount       = $totalAfterDiscount * ($taxPercentage / 100);
-                $totalAmount     = $totalAfterDiscount + $taxAmount;
-                $date            = Carbon::now()->format('Ymd');
+                if ($transactionType === Sale::TYPE_COMPLIMENTARY) {
+                                                   // Jika Complimentary: Diskon 100%, Pajak 0, Total Akhir 0
+                    $discountAmount   = $subtotal; // Diskon 100%
+                    $taxAmount        = 0;
+                    $finalTotalAmount = 0; // <-- Total HARUS 0
+                } else {
+                    $discountType  = $request->discount_type;
+                    $discountValue = $request->discount_value ?? 0;
+                    if ($discountType === 'percentage') {
+                        $discountAmount = $subtotal * ($discountValue / 100);
+                    } elseif ($discountType === 'fixed') {
+                        $discountAmount = $discountValue;
+                    }
+                    $discountAmount = min($subtotal, $discountAmount); // Validasi diskon
+
+                    $totalAfterDiscount = $subtotal - $discountAmount;
+                    $taxPercentage      = (float) (Setting::where('key', 'tax')->value('value') ?? 0);
+                    $taxAmount          = $totalAfterDiscount * ($taxPercentage / 100);
+
+                    $finalTotalAmount = $totalAfterDiscount + $taxAmount;
+                }
+
+                $date            = now()->format('Ymd');
                 $latestSaleToday = Sale::where('transaction_code', 'like', "TRX-{$date}-%")->latest('id')->first();
                 $nextNumber      = $latestSaleToday ? intval(substr($latestSaleToday->transaction_code, -3)) + 1 : 1;
                 $transactionCode = "TRX-{$date}-" . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
@@ -314,30 +388,77 @@ class CashierController extends Controller
                     'table_number'     => $request->table_number,
                     'order_type'       => $request->order_type,
                     'notes'            => $request->notes,
-                    'discount_amount'  => $discountAmount, // <-- Simpan nilai diskon final dalam Rupiah
-                    'tax_amount'       => $taxAmount,
-                    'total_amount'     => $totalAmount,
-                    'status'           => 'completed',
+                    'discount_amount'  => $discountAmount,   // Akan 0 jika complimentary (atau subtotal jika 100%)
+                    'tax_amount'       => $taxAmount,        // Akan 0 jika complimentary
+                    'total_amount'     => $finalTotalAmount, // Akan 0 jika complimentary
+                    'status'           => 'completed',       // Anggap selesai
                 ]);
 
-                $changeAmount = 0;
-                if ($request->payment_method === 'cash') {
-                    $cashReceived = (float) ($request->cash_received ?? 0);
-                    $change       = $cashReceived - $totalAmount;
-                    $changeAmount = $change >= 0 ? $change : 0;
+                if ($transactionType !== Sale::TYPE_COMPLIMENTARY && $reservation && $depositAmount > 0) {
+                    $sale->payments()->create([
+                        'payment_method' => 'Deposit Reservasi',
+                        'amount'         => $depositAmount,
+                        'payment_date'   => now(),
+                        'reservation_id' => $reservation->id,
+                    ]);
                 }
 
-                $sale->payments()->create([
-                    'payment_method' => $request->payment_method,
-                    'amount'         => $totalAmount,
-                    'cash_received'  => $request->cash_received,
-                    'change_amount'  => $changeAmount,
-                ]);
-            });
+                $amountDue             = $finalTotalAmount - $depositAmount;
+                $amountDue             = max(0, $amountDue); // Pastikan tidak negatif
+                $changeAmount          = 0;                  // Default kembalian 0
+                $customerPaymentAmount = 0;                  // Berapa yg dibayar customer
+                $cashReceived          = null;
 
-            return response()->json(['status' => 'success', 'message' => 'Transaksi berhasil!', 'sale_id' => $sale->id]);
+                if ($amountDue > 0 && $transactionType !== Sale::TYPE_COMPLIMENTARY) {
 
-        } catch (Throwable $e) {
+                    if ($request->payment_method === 'cash') {
+                        $cashReceived = (float) ($request->cash_received ?? 0);
+                        if ($cashReceived < $amountDue) {
+                            throw new \Exception('Jumlah uang tunai yang diterima kurang dari sisa tagihan.');
+                        }
+                        $customerPaymentAmount = $amountDue; // Catat sebesar sisa tagihan
+                        $changeAmount          = $cashReceived - $amountDue;
+                    } else {
+                        $customerPaymentAmount = $amountDue; // Anggap dibayar pas
+                    }
+
+                    // Catat Payment Customer
+                    $sale->payments()->create([
+                        'payment_method' => $request->payment_method,
+                        'amount'         => $customerPaymentAmount,
+                        'cash_received'  => $cashReceived,
+                        'change_amount'  => $changeAmount,
+                        'payment_date'   => now(),
+                    ]);
+                } else {
+                    if ($sale->status !== 'completed') { // Double check
+                        $sale->status = 'completed';
+                        $sale->save();
+                    }
+                }
+
+                if ($reservation) {
+                    $reservation->update([
+                        'status'  => 'completed',
+                        'sale_id' => $sale->id,
+                    ]);
+                }
+
+                return [
+                    'sale_id'       => $sale->id,
+                    'change_amount' => $changeAmount, // Kembalian (akan 0 jika non-cash/complimentary)
+                ];
+
+            }); // Akhir DB::transaction
+
+            return response()->json([
+                'status'        => 'success',
+                'message'       => 'Transaksi berhasil!',
+                'sale_id'       => $result['sale_id'],
+                'change_amount' => $result['change_amount'],
+            ]);
+
+        } catch (Throwable $e) { // Lebih baik catch Throwable
             return response()->json(['status' => 'error', 'message' => 'Gagal: ' . $e->getMessage()], 500);
         }
     }
@@ -382,6 +503,197 @@ class CashierController extends Controller
         }
     }
 
+    public function smartPrintAfterPayment($id)
+    {
+        try {
+            $sale = Sale::with([
+                'user',
+                'items.menuItem.menuCategory',
+                'items.selectedModifiers.modifier',
+            ])->findOrFail($id);
+
+            $settings           = Setting::pluck('value', 'key')->toArray();
+            $kitchenPrinterName = $settings['printer_dapur'] ?? null;
+            $barPrinterName     = $settings['printer_bar'] ?? null;
+
+            // Validasi: Minimal satu printer harus dikonfigurasi
+            if (empty($kitchenPrinterName) && empty($barPrinterName)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Belum ada printer yang dikonfigurasi di pengaturan.',
+                ], 400);
+            }
+
+            // Ambil daftar printer yang tersedia
+            $allPrinters = \Native\Laravel\Facades\System::printers();
+
+            if (empty($allPrinters)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada printer yang terdeteksi di sistem.',
+                ], 400);
+            }
+
+            // Pisahkan items berdasarkan kategori
+            $kitchenItems = collect();
+            $barItems     = collect();
+
+            foreach ($sale->items as $item) {
+                if ($item->menuItem && $item->menuItem->menuCategory &&
+                    strtolower($item->menuItem->menuCategory->name) === 'minuman') {
+                    $barItems->push($item);
+                } else {
+                    $kitchenItems->push($item);
+                }
+            }
+
+            // Validasi: Harus ada item untuk dicetak
+            if ($kitchenItems->isEmpty() && $barItems->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tidak ada item untuk dicetak.',
+                ], 400);
+            }
+
+            $successPrinters = [];
+            $failedPrinters  = [];
+
+            // ============================================
+            // CETAK KE PRINTER DAPUR (item non-minuman)
+            // ============================================
+            if ($kitchenItems->isNotEmpty() && ! empty($kitchenPrinterName)) {
+                try {
+                    // Render HTML untuk kitchen
+                    $kitchenHtml = view('cashier._print_kitchen', [
+                        'sale'         => $sale,
+                        'itemsToPrint' => $kitchenItems,
+                        'settings'     => $settings,
+                    ])->render();
+
+                    // Debug: Log HTML length untuk memastikan ada content
+                    Log::info("Kitchen HTML length: " . strlen($kitchenHtml) . " chars");
+                    Log::info("Kitchen items count: " . $kitchenItems->count());
+
+                    // Cari printer berdasarkan name atau displayName
+                    $printer = collect($allPrinters)->first(function ($p) use ($kitchenPrinterName) {
+                        return $p->name === $kitchenPrinterName ||
+                        $p->displayName === $kitchenPrinterName;
+                    });
+
+                    if (! $printer) {
+                        $failedPrinters[] = "Dapur ({$kitchenPrinterName}) - Printer tidak ditemukan";
+                        Log::warning("Kitchen printer not found: {$kitchenPrinterName}");
+                    } else {
+                        // Print langsung
+                        \Native\Laravel\Facades\System::print($kitchenHtml, $printer, [
+                            'silent'   => false, // false = muncul dialog untuk virtual printer
+                            'pageSize' => [
+                                'width'  => 80000,  // 80mm
+                                'height' => 297000, // Auto height
+                            ],
+                            'margins'  => [
+                                'top'    => 0,
+                                'bottom' => 0,
+                                'left'   => 0,
+                                'right'  => 0,
+                            ],
+                        ]);
+
+                        $successPrinters[] = "Dapur ({$kitchenPrinterName})";
+                        Log::info("Kitchen print success: {$kitchenPrinterName}");
+                    }
+                } catch (\Exception $e) {
+                    $failedPrinters[] = "Dapur ({$kitchenPrinterName}) - {$e->getMessage()}";
+                    Log::error("Kitchen print failed: " . $e->getMessage());
+                }
+            }
+
+            // ============================================
+            // CETAK KE PRINTER BAR (item minuman)
+            // ============================================
+            if ($barItems->isNotEmpty() && ! empty($barPrinterName)) {
+                try {
+                    // Gunakan view khusus bar jika ada, fallback ke kitchen
+                    $barViewName = \View::exists('cashier._print_bar')
+                        ? 'cashier._print_bar'
+                        : 'cashier._print_kitchen';
+
+                    $barHtml = view($barViewName, [
+                        'sale'         => $sale,
+                        'itemsToPrint' => $barItems,
+                        'settings'     => $settings,
+                    ])->render();
+
+                    // Debug: Log HTML length untuk memastikan ada content
+                    Log::info("Bar HTML length: " . strlen($barHtml) . " chars");
+                    Log::info("Bar items count: " . $barItems->count());
+
+                    // Cari printer berdasarkan name atau displayName
+                    $printer = collect($allPrinters)->first(function ($p) use ($barPrinterName) {
+                        return $p->name === $barPrinterName ||
+                        $p->displayName === $barPrinterName;
+                    });
+
+                    if (! $printer) {
+                        $failedPrinters[] = "Bar ({$barPrinterName}) - Printer tidak ditemukan";
+                        Log::warning("Bar printer not found: {$barPrinterName}");
+                    } else {
+                        // Print langsung
+                        \Native\Laravel\Facades\System::print($barHtml, $printer, [
+                            'silent'   => false,
+                            'pageSize' => [
+                                'width'  => 80000,
+                                'height' => 297000,
+                            ],
+                            'margins'  => [
+                                'top'    => 0,
+                                'bottom' => 0,
+                                'left'   => 0,
+                                'right'  => 0,
+                            ],
+                        ]);
+
+                        $successPrinters[] = "Bar ({$barPrinterName})";
+                        Log::info("Bar print success: {$barPrinterName}");
+                    }
+                } catch (\Exception $e) {
+                    $failedPrinters[] = "Bar ({$barPrinterName}) - {$e->getMessage()}";
+                    Log::error("Bar print failed: " . $e->getMessage());
+                }
+            }
+
+            // ============================================
+            // RESPONSE BERDASARKAN HASIL
+            // ============================================
+            if (! empty($successPrinters)) {
+                $message = 'Struk berhasil dicetak ke: ' . implode(' & ', $successPrinters);
+
+                // Tambahkan warning jika ada yang gagal
+                if (! empty($failedPrinters)) {
+                    $message .= '. Gagal: ' . implode(', ', $failedPrinters);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                ]);
+            }
+
+            // Semua printer gagal
+            return response()->json([
+                'success' => false,
+                'message' => 'Semua printer gagal. Detail: ' . implode(', ', $failedPrinters),
+            ], 500);
+
+        } catch (\Exception $e) {
+            Log::error('smartPrintAfterPayment failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memproses pencetakan: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function printCustomerReceipt($id)
     {
         $sale = Sale::with([
@@ -419,33 +731,102 @@ class CashierController extends Controller
     {
         $sale = Sale::with([
             'user',
-            'items.menuItem',
+            'items.menuItem.menuCategory', // Ubah relasi ke menuCategory sesuai model MenuItem
             'items.selectedModifiers.modifier',
-            'payments',
         ])->findOrFail($id);
 
-        $settings    = Setting::pluck('value', 'key')->toArray();
-        $printerName = $settings['printer_dapur'] ?? null;
+        $settings           = Setting::pluck('value', 'key')->toArray();
+        $kitchenPrinterName = $settings['printer_dapur'] ?? null;
+        $barPrinterName     = $settings['printer_bar'] ?? null;
+
+        $virtualPrinters = [
+            'Nitro PDF Creator',
+            'Microsoft Print to PDF',
+            'Save as PDF',
+        ];
+
+        $isKitchenPrinterValid = $kitchenPrinterName && ! in_array($kitchenPrinterName, $virtualPrinters);
+        $isBarPrinterValid     = $barPrinterName && ! in_array($barPrinterName, $virtualPrinters);
+
+        // Pemisahan item: berdasarkan kategori dari relasi menuCategory
+        $kitchenItems = collect();
+        $barItems     = collect();
+
+        foreach ($sale->items as $item) {
+            // Pastikan properti menuCategory() sesuai dengan relasi di model MenuItem
+            if ($item->menuItem && $item->menuItem->menuCategory && $item->menuItem->menuCategory->name === 'Minuman') {
+                $barItems->push($item);
+            } else {
+                $kitchenItems->push($item);
+            }
+        }
 
         try {
-            $html = view('cashier._print_kitchen', compact('sale', 'settings'))->render();
+            $dispatchedPrinters = [];
 
-            $isVirtualPrinter = in_array($printerName, ['Nitro PDF Creator', 'Microsoft Print to PDF']);
+            // Jika salah satu printer tidak valid, tampilkan preview gabungan
+            if (! $isKitchenPrinterValid || ! $isBarPrinterValid) {
+                if (! View::exists('cashier._print_kitchen')) {
+                    throw new \Exception("View 'cashier._print_kitchen' tidak ditemukan.");
+                }
+                return view('cashier._print_kitchen', [
+                    'sale'         => $sale,
+                    'itemsToPrint' => $sale->items,
+                    'settings'     => $settings,
+                ]);
+            }
 
-            if ($printerName && ! $isVirtualPrinter) {
-                PrintReceipt::dispatch($html, $printerName);
+            // Jika kedua printer valid, proses split printing
+            if ($kitchenItems->isNotEmpty()) {
+                if (! View::exists('cashier._print_kitchen')) {
+                    throw new \Exception("View 'cashier._print_kitchen' tidak ditemukan.");
+                }
+                $kitchenHtml = view('cashier._print_kitchen', [
+                    'sale'         => $sale,
+                    'itemsToPrint' => $kitchenItems,
+                    'settings'     => $settings,
+                ])->render();
 
+                PrintReceipt::dispatch($kitchenHtml, $kitchenPrinterName);
+                $dispatchedPrinters[] = "Dapur ({$kitchenPrinterName})";
+            }
+
+            if ($barItems->isNotEmpty()) {
+                // Bisa menggunakan view yang sama, atau jika tersedia, gunakan _print_bar
+                $barViewName = View::exists('cashier._print_bar')
+                    ? 'cashier._print_bar'
+                    : 'cashier._print_kitchen';
+
+                if (! View::exists($barViewName)) {
+                    throw new \Exception("View '{$barViewName}' (untuk bar) tidak ditemukan.");
+                }
+
+                $barHtml = view($barViewName, [
+                    'sale'         => $sale,
+                    'itemsToPrint' => $barItems,
+                    'settings'     => $settings,
+                ])->render();
+
+                PrintReceipt::dispatch($barHtml, $barPrinterName);
+                $dispatchedPrinters[] = "Bar ({$barPrinterName})";
+            }
+
+            if (empty($dispatchedPrinters)) {
                 return response()->json([
                     'success' => true,
-                    'message' => "Struk dapur sedang dicetak ke printer: {$printerName}",
+                    'message' => 'Tidak ada item yang perlu dicetak atau printer tidak valid.',
                 ]);
             } else {
-                return view('cashier._print_kitchen', compact('sale', 'settings'));
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Struk sedang dikirim ke printer: ' . implode(' & ', $dispatchedPrinters),
+                ]);
             }
+
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Gagal mencetak: ' . $e->getMessage(),
+                'message' => 'Gagal memproses pencetakan: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -488,10 +869,17 @@ class CashierController extends Controller
         $taxPercentage = (float) (Setting::where('key', 'tax')->value('value') ?? 0);
         $taxAmount     = $sale->subtotal * ($taxPercentage / 100);
 
+        $activeReservations = Reservation::whereIn('status', ['confirmed'])
+            ->whereNull('sale_id')
+            ->where('deposit_amount', '>', 0)
+            ->orderBy('reservation_time', 'desc')
+            ->get(['id', 'customer_name', 'table_number', 'deposit_amount']);
+
         return view('cashier.payment', [
-            'sale'          => $sale,
-            'taxPercentage' => $taxPercentage,
-            'taxAmount'     => $taxAmount,
+            'sale'               => $sale,
+            'taxPercentage'      => $taxPercentage,
+            'taxAmount'          => $taxAmount,
+            'activeReservations' => $activeReservations,
         ]);
     }
 
@@ -526,16 +914,16 @@ class CashierController extends Controller
                     }
                 })
                 // Pencarian Nama Kasir
-                ->orWhereHas('user', function ($q) use ($search) {
-                    if (mb_strlen($search) >= 3) {
-                        $q->where('name', '=', $search)
-                          ->orWhere('name', 'like', $search . '%');
-                    } else {
-                        $q->where('name', 'like', '%' . $search . '%');
-                    }
-                });
+                    ->orWhereHas('user', function ($q) use ($search) {
+                        if (mb_strlen($search) >= 3) {
+                            $q->where('name', '=', $search)
+                                ->orWhere('name', 'like', $search . '%');
+                        } else {
+                            $q->where('name', 'like', '%' . $search . '%');
+                        }
+                    });
             });
-        
+
         }
 
         $sales = $salesQuery->paginate(10);
@@ -545,9 +933,9 @@ class CashierController extends Controller
     public function historyShow(Sale $sale)
     {
         $sale->load([
-            'user:id,name',                             
-            'items.menuItem:id,name',                   
-            'items.selectedModifiers.modifier:id,name', 
+            'user:id,name',
+            'items.menuItem:id,name',
+            'items.selectedModifiers.modifier:id,name',
             'payments',
         ]);
 
@@ -558,5 +946,41 @@ class CashierController extends Controller
             'status' => 'success',
             'sale'   => $sale,
         ]);
+    }
+
+    public function storeReservation(Request $request)
+    {
+        $validated = $request->validate([
+            'customer_name'    => 'required|string|max:255',
+            'table_number'     => 'nullable|string|max:50',
+            'pax'              => 'required|integer|min:1',
+            'reservation_time' => 'required|date|after_or_equal:now',
+            'deposit_amount'   => 'required|numeric|min:0',
+            'contact_number'   => 'nullable|string|max:20',
+            'notes'            => 'nullable|string|max:1000',
+        ], [
+            'reservation_time.after_or_equal' => 'Waktu reservasi tidak boleh di masa lalu.',
+        ]);
+
+        try {
+            $validated['user_id'] = Auth::id();
+            $validated['status']  = 'confirmed';
+
+            $reservation = Reservation::create($validated);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Reservasi untuk ' . $validated['customer_name'] . ' berhasil disimpan.',
+                'data'    => $reservation,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Gagal menyimpan reservasi: ' . $e->getMessage());
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Terjadi kesalahan saat menyimpan reservasi. Silakan coba lagi.',
+            ], 500);
+        }
     }
 }

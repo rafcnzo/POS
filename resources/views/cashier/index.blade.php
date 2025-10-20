@@ -197,6 +197,35 @@
             border-color: #dc3545;
         }
 
+        /* Custom style for .btn-add-secondary (Buat Reservasi button) */
+        .btn-add-secondary {
+            background: #e9ecef;
+            color: #343a40;
+            font-weight: 600;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 0.6rem 1.4rem;
+            font-size: 1rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.25s, box-shadow 0.2s, transform 0.2s, color 0.2s;
+        }
+
+        .btn-add-secondary i {
+            font-size: 1.25rem;
+        }
+
+        .btn-add-secondary:hover,
+        .btn-add-secondary:focus {
+            background: linear-gradient(90deg, #5f2c82 0%, #49a09d 100%);
+            color: #fff;
+            box-shadow: 0 4px 16px rgba(102, 126, 234, 0.18);
+            transform: translateY(-2px) scale(1.03);
+            text-decoration: none;
+        }
+
         .pos-cart-items {
             flex: 1;
             overflow-y: auto;
@@ -305,7 +334,6 @@
             color: #fff;
             font-weight: 600;
             font-size: 1rem;
-            border-radius: 0 0 12px 12px;
             cursor: pointer;
             transition: all 0.3s ease;
         }
@@ -490,6 +518,207 @@
             text-align: center;
             color: #6c757d;
         }
+
+        /* Modernize button styles */
+        .btn-check:checked+.btn-outline-primary,
+        .btn-check:active+.btn-outline-primary,
+        .btn-check:focus+.btn-outline-primary {
+            background-color: #667eea !important;
+            color: #fff !important;
+            border-color: #667eea !important;
+            box-shadow: 0 2px 12px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn-outline-primary,
+        .btn-outline-secondary,
+        .btn-outline-info {
+            border-radius: 30px !important;
+            padding: 8px 20px !important;
+            font-weight: 600 !important;
+            border-width: 2px !important;
+            transition:
+                background 0.15s,
+                color 0.15s,
+                box-shadow 0.2s;
+            background: #fff;
+            box-shadow: 0 2px 12px rgba(102, 126, 234, 0.02);
+        }
+
+        .btn-outline-primary:hover,
+        .btn-outline-secondary:hover,
+        .btn-outline-info:hover {
+            background: linear-gradient(90deg, #667eea 60%, #5a67d8 100%);
+            color: #fff !important;
+            border-color: #667eea;
+            box-shadow: 0 4px 18px rgba(102, 126, 234, 0.12);
+        }
+
+        .btn-outline-secondary {
+            border-color: #7c8a97;
+            color: #535353;
+        }
+
+        .btn-check:checked+.btn-outline-secondary {
+            background: #495b6e !important;
+            color: #fff !important;
+            border-color: #495b6e !important;
+        }
+
+        .btn-outline-info {
+            border-color: #38b6ff;
+            color: #2a7ea8;
+        }
+
+        .btn-check:checked+.btn-outline-info {
+            background: #38b6ff !important;
+            color: #fff !important;
+            border-color: #38b6ff !important;
+        }
+
+        /* Modernize checkbox selection */
+        .btn-check:focus+label,
+        .btn-outline-primary:focus,
+        .btn-outline-secondary:focus,
+        .btn-outline-info:focus {
+            outline: 0;
+            box-shadow: 0 0 0 3px #b3bcf5;
+        }
+
+        /* Search box redesign */
+        .search-box {
+            background: #f1f5fb;
+            border-radius: 32px;
+            padding: 6px 18px;
+            border: 1px solid #d5e0fa;
+            transition: box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.04);
+            position: relative;
+        }
+
+        .search-box:focus-within {
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.12);
+            border-color: #667eea;
+            background: #fff;
+        }
+
+        .search-box i {
+            color: #667eea;
+            font-size: 18px;
+            padding-left: 3px;
+        }
+
+        .search-box input {
+            border: none;
+            outline: none;
+            background: transparent;
+            width: 90%;
+            font-size: 1.06rem;
+            color: #263159;
+        }
+
+        .search-box input::placeholder {
+            color: #aab7cf;
+            opacity: 1;
+            font-weight: 400;
+            font-size: 15px;
+        }
+
+        /* Reservasi button modern style */
+        .btn-add-secondary {
+            background: linear-gradient(90deg, #667eea 55%, #38b6ff 100%);
+            color: #fff !important;
+            border: none;
+            border-radius: 28px;
+            font-weight: 600;
+            padding: 10px 22px;
+            box-shadow: 0 3px 14px rgba(59, 130, 246, 0.10);
+            transition: background 0.15s, box-shadow 0.15s, color 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-add-secondary:hover {
+            background: linear-gradient(90deg, #4452c4 70%, #1365dd 100%);
+            color: #eee !important;
+            box-shadow: 0 6px 22px rgba(59, 130, 246, 0.15);
+        }
+
+        .btn-add-secondary i {
+            font-size: 1.1rem;
+        }
+
+        /* Cart summary card */
+        .pos-cart-summary {
+            background: #f9fbfd;
+            border-radius: 12px;
+            padding: 22px 18px;
+            box-shadow: 0 2px 16px rgba(36, 68, 194, 0.05);
+            margin-bottom: 12px;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 1.03rem;
+            margin-bottom: 6px;
+            color: #656d8a;
+        }
+
+        .summary-total {
+            font-weight: 700;
+            color: #263159;
+            font-size: 1.18rem;
+            margin-top: 8px;
+        }
+
+        .summary-value {
+            font-family: 'Nunito', 'Segoe UI', Arial, sans-serif;
+            letter-spacing: 0.1px;
+        }
+
+        /* Responsive padding for main POS card */
+        .pos-card {
+            border-radius: 14px;
+            box-shadow: 0 3px 22px rgba(59, 130, 246, 0.03);
+            border: 1px solid #e3e9fa;
+            background: #fff;
+            padding: 2.3rem 2rem 1.3rem 2rem;
+            margin-bottom: 28px;
+        }
+
+        /* Transaction type header modern look */
+        .form-label.fw-bold {
+            color: #263159;
+            font-size: 1.03rem;
+            padding-right: 7px;
+            margin-top: 3px;
+            font-family: 'Nunito', 'Arial', sans-serif;
+        }
+
+        .mb-3.d-flex.align-items-center.gap-2 {
+            margin-bottom: 17px !important;
+        }
+
+        @media (max-width:800px) {
+            .pos-card {
+                padding: 1rem 1rem 0.7rem 1rem !important;
+            }
+
+            .btn-add-secondary {
+                padding: 8px 13px;
+                font-size: 15px;
+            }
+
+            .summary-row,
+            .summary-total {
+                font-size: 1rem;
+            }
+        }
     </style>
 @endsection
 
@@ -505,13 +734,41 @@
             <div class="row g-3">
                 <div class="col-lg-8">
                     <div class="pos-card">
+                        <div class="mb-3 d-flex align-items-center gap-2">
+                            <label class="form-label mb-0 fw-bold">Tipe Transaksi:</label>
+                            <div>
+                                <input type="radio" class="btn-check" name="transaction_type_selector" id="type_regular"
+                                    value="regular" checked>
+                                <label class="btn btn-sm btn-outline-primary" for="type_regular">
+                                    <i class="bi bi-cart"></i> Regular
+                                </label>
+
+                                <input type="radio" class="btn-check" name="transaction_type_selector" id="type_employee"
+                                    value="employee_meal">
+                                <label class="btn btn-sm btn-outline-secondary" for="type_employee">
+                                    <i class="bi bi-person-badge"></i> Makan Karyawan
+                                </label>
+
+                                <input type="radio" class="btn-check" name="transaction_type_selector"
+                                    id="type_complimentary" value="complimentary">
+                                <label class="btn btn-sm btn-outline-info" for="type_complimentary">
+                                    <i class="bi bi-gift"></i> Complimentary/Official
+                                </label>
+                            </div>
+                        </div>
+                        <hr>
                         <div class="pos-search-container">
-                            <div class="pos-search-wrapper">
-                                <div class="search-box">
+                            <div class="pos-search-wrapper" style="display: flex; align-items: center; gap: 20px;">
+                                <div class="search-box" style="flex: 1;">
                                     <i class="bi bi-search"></i>
                                     <input type="text" placeholder="Cari produk..." id="searchProduct"
                                         autocomplete="off">
                                 </div>
+                                <button class="btn-add-secondary" id="btnTambahReservasi" type="button"
+                                    data-bs-toggle="modal" data-bs-target="#modalReservasi" style="margin-left: 20px;">
+                                    <i class="bi bi-calendar-plus"></i>
+                                    <span>Buat Reservasi</span>
+                                </button>
                             </div>
                             <div class="search-results-container" id="searchResultsContainer"></div>
                         </div>
@@ -671,7 +928,103 @@
     <form id="formToPayment" action="{{ route('cashier.startTransaction') }}" method="POST" style="display: none;">
         @csrf
         <input type="hidden" name="cart_data" id="cartDataInput">
+        <input type="hidden" name="transaction_type" id="transactionTypeInput" value="regular">
     </form>
+
+    <div class="modal fade" id="modalReservasi" tabindex="-1" aria-labelledby="modalReservasiLabel"
+        aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content custom-modal">
+                {{-- Ganti route() dengan nama route Anda --}}
+                <form id="formReservasi" data-url="{{ route('cashier.reservations.store') }}">
+                    @csrf
+                    <div class="modal-header custom-modal-header">
+                        <div class="modal-header-content">
+                            <div class="modal-icon"><i class="bi bi-calendar-plus-fill"></i></div>
+                            <h5 class="modal-title" id="modalReservasiLabel">Buat Reservasi Baru</h5>
+                        </div>
+                        <button type="button" class="btn-close-custom" data-bs-dismiss="modal" aria-label="Tutup"><i
+                                class="bi bi-x"></i></button>
+                    </div>
+                    <div class="modal-body custom-modal-body">
+                        <div id="formReservasiAlert"></div>
+
+                        <div class="form-group-custom">
+                            <label for="res_customer_name" class="form-label-custom required"><i
+                                    class="bi bi-person"></i> Nama Customer</label>
+                            <input type="text" class="form-control-custom" id="res_customer_name"
+                                name="customer_name" required>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <div class="form-group-custom">
+                                    <label for="res_pax" class="form-label-custom required"><i class="bi bi-people"></i>
+                                        Jumlah Orang (Pax)</label>
+                                    <input type="number" class="form-control-custom" id="res_pax" name="pax"
+                                        min="1" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-group-custom">
+                                    <label for="res_table_number" class="form-label-custom"><i class="bi bi-table"></i>
+                                        No. Meja</label>
+                                    <input type="text" class="form-control-custom" id="res_table_number"
+                                        name="table_number">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group-custom">
+                            <label for="res_reservation_time" class="form-label-custom required"><i
+                                    class="bi bi-clock"></i> Waktu Reservasi</label>
+                            <input type="datetime-local" class="form-control-custom" id="res_reservation_time"
+                                name="reservation_time" required>
+                        </div>
+                        <div class="form-group-custom">
+                            <label for="res_contact_number" class="form-label-custom"><i class="bi bi-phone"></i> No.
+                                Kontak</label>
+                            <input type="tel" class="form-control-custom" id="res_contact_number"
+                                name="contact_number">
+                        </div>
+                        <hr style="border-top: 2px dashed #ddd; margin: 20px 0;">
+
+                        <h6><i class="bi bi-wallet2"></i> Detail Deposit (DP)</h6>
+                        <div class="form-group-custom">
+                            <label for="res_deposit_amount" class="form-label-custom required"><i
+                                    class="bi bi-cash-coin"></i> Jumlah DP (Rp)</label>
+                            <input type="number" class="form-control-custom" id="res_deposit_amount"
+                                name="deposit_amount" min="0" value="0" required> {{-- Default 0 --}}
+                        </div>
+
+                        <div class="form-group-custom" id="deposit_method_group" style="display: none;">
+                            <label for="res_deposit_payment_method" class="form-label-custom required"><i
+                                    class="bi bi-credit-card"></i> Metode Bayar DP</label>
+                            <select class="form-control-custom" id="res_deposit_payment_method"
+                                name="deposit_payment_method">
+                                <option value="">-- Pilih Metode --</option>
+                                <option value="cash">Tunai (Cash)</option>
+                                <option value="edc">EDC (Kartu)</option>
+                                <option value="qris">QRIS</option>
+                            </select>
+                        </div>
+
+                        <hr style="border-top: 2px dashed #ddd; margin: 20px 0;">
+                        <div class="form-group-custom">
+                            <label for="res_notes" class="form-label-custom"><i class="bi bi-pencil-square"></i>
+                                Catatan</label>
+                            <textarea class="form-control-custom" id="res_notes" name="notes" rows="2"></textarea>
+                        </div>
+
+                    </div>
+                    <div class="modal-footer custom-modal-footer">
+                        <button type="button" class="btn-secondary-custom" data-bs-dismiss="modal"><i
+                                class="bi bi-x"></i> Batal</button>
+                        <button type="submit" class="btn-primary-custom" id="btnSimpanReservasi"><i
+                                class="bi bi-check"></i> Simpan Reservasi</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 @endsection
 @push('script')
     <script>
@@ -680,6 +1033,189 @@
         let currentProduct = null;
 
         const formatCurrency = (value) => 'Rp ' + (value || 0).toLocaleString('id-ID');
+        document.addEventListener('DOMContentLoaded', function() {
+            const formReservasi = document.getElementById('formReservasi');
+            const modalReservasi = new bootstrap.Modal(document.getElementById('modalReservasi'));
+            const alertReservasi = document.getElementById('formReservasiAlert');
+            const btnSimpanReservasi = document.getElementById('btnSimpanReservasi');
+
+            // --- LOGIKA UNTUK DP & METODE BAYAR ---
+            const depositAmountInput = document.getElementById('res_deposit_amount');
+            const depositMethodGroup = document.getElementById('deposit_method_group');
+            const depositMethodSelect = document.getElementById('res_deposit_payment_method');
+
+            const correctAuthPassword = @json($authorizationPassword ?? '');
+            let currentTransactionType = 'regular';
+            const transactionTypeRadios = document.querySelectorAll('input[name="transaction_type_selector"]');
+            const transactionTypeInputHidden = document.getElementById('transactionTypeInput');
+
+            if (depositAmountInput && depositMethodGroup && depositMethodSelect) {
+                function toggleDepositMethod() {
+                    const amount = parseFloat(depositAmountInput.value) || 0;
+                    if (amount > 0) {
+                        depositMethodGroup.style.display = 'block';
+                        depositMethodSelect.setAttribute('required', 'required');
+                    } else {
+                        depositMethodGroup.style.display = 'none';
+                        depositMethodSelect.removeAttribute('required');
+                        depositMethodSelect.value = '';
+                    }
+                }
+                depositAmountInput.addEventListener('input', toggleDepositMethod);
+                depositAmountInput.addEventListener('change', toggleDepositMethod);
+                document.getElementById('modalReservasi').addEventListener('show.bs.modal', function() {
+                    depositAmountInput.value = 0;
+                    toggleDepositMethod();
+                });
+                document.getElementById('modalReservasi').addEventListener('hidden.bs.modal', function() {
+                    alertReservasi.innerHTML = '';
+                    formReservasi.reset();
+                    toggleDepositMethod();
+                });
+            }
+            if (formReservasi) {
+                formReservasi.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    btnSimpanReservasi.disabled = true;
+                    alertReservasi.innerHTML = '';
+                    Swal.showLoading();
+
+                    const formData = new FormData(formReservasi);
+                    const url = formReservasi.dataset.url;
+
+                    fetch(url, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value,
+                                'Accept': 'application/json',
+                            },
+                            body: formData,
+                        })
+                        .then(async response => {
+                            const data = await response.json();
+                            Swal.close();
+                            btnSimpanReservasi.disabled = false;
+
+                            if (response.ok) {
+                                modalReservasi.hide();
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Berhasil!',
+                                    text: data.message || 'Reservasi berhasil disimpan.',
+                                    timer: 2000,
+                                    showConfirmButton: false
+                                });
+                            } else {
+                                const errors = data.errors ? Object.values(data.errors).flat().join(
+                                    '<br>') : (data.message || 'Gagal menyimpan data');
+                                alertReservasi.innerHTML =
+                                    `<div class="alert alert-danger" role="alert">${errors}</div>`;
+                            }
+                        })
+                        .catch(error => {
+                            Swal.close();
+                            btnSimpanReservasi.disabled = false;
+                            alertReservasi.innerHTML =
+                                `<div class="alert alert-danger" role="alert">Terjadi kesalahan jaringan: ${error.message}</div>`;
+                        });
+                });
+            }
+
+            // --- RESET modalCustomizeItem contents on close ---
+            const modalCustomizeItemEl = document.getElementById('modalCustomizeItem');
+            if (modalCustomizeItemEl) {
+                modalCustomizeItemEl.addEventListener('hidden.bs.modal', function() {
+                    document.getElementById('customizeProductName').textContent = 'Nama Produk';
+                    document.getElementById('customizeProductPrice').textContent = 'Rp 0';
+                    document.getElementById('customizeStock').textContent = '0';
+                    document.getElementById('customizeQtyInput').value = "1";
+                    document.getElementById('customizeItemNotes').value = '';
+                    document.getElementById('modalItemTotal').textContent = 'Rp 0';
+                    document.getElementById('modifierGroupsContainer').innerHTML = '';
+                });
+            }
+
+            transactionTypeRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const selectedType = this.value;
+                    const previousType = currentTransactionType;
+
+                    if (selectedType === 'complimentary') {
+                        Swal.fire({
+                            title: 'Otorisasi Diperlukan',
+                            text: 'Masukkan password otorisasi untuk melanjutkan:',
+                            input: 'password',
+                            inputPlaceholder: 'Password...',
+                            inputAttributes: {
+                                autocapitalize: 'off',
+                                autocorrect: 'off'
+                            },
+                            showCancelButton: true,
+                            confirmButtonText: 'Otorisasi',
+                            cancelButtonText: 'Batal',
+                            showLoaderOnConfirm: true,
+                            preConfirm: (password) => {
+                                if (password === correctAuthPassword) {
+                                    return true;
+                                } else {
+                                    Swal.showValidationMessage(
+                                        'Password otorisasi salah!');
+                                    return false;
+                                }
+                            },
+                            allowOutsideClick: () => !Swal.isLoading()
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                currentTransactionType = selectedType;
+                                transactionTypeInputHidden.value = selectedType;
+                                // Swal.fire({
+                                //     icon: 'success',
+                                //     title: 'Otorisasi Berhasil',
+                                //     text: 'Mode Complimentary/Official diaktifkan.',
+                                //     timer: 2000,
+                                //     showConfirmButton: false
+                                // });
+                                Swal.fire({
+                                    icon: 'info',
+                                    title: 'Mode Complimentary',
+                                    text: 'Harga item akan dihitung, namun total akhir transaksi akan menjadi Rp 0.',
+                                    timer: 3000,
+                                    showConfirmButton: false
+                                });
+                            } else {
+                                document.querySelector(
+                                    `input[name="transaction_type_selector"][value="${previousType}"]`
+                                ).checked = true;
+                                transactionTypeInputHidden.value = previousType;
+                            }
+                        });
+                    } else {
+                        currentTransactionType = selectedType;
+                        transactionTypeInputHidden.value = selectedType;
+                        // console.log("Tipe transaksi diubah menjadi:", selectedType);
+                    }
+                });
+            });
+        });
+
+        // Jangan panggil dua kali swal complimentary di bawah!
+        // Hapus kode swal info double complimentary
+        // document.querySelectorAll('input[name="transaction_type_selector"]').forEach(radio => {
+        //     radio.addEventListener('change', function() {
+        //         const selectedType = this.value;
+        //         document.getElementById('transactionTypeInput').value = selectedType;
+        //         console.log("Tipe transaksi diubah menjadi:", selectedType);
+        //         if (selectedType === 'complimentary') {
+        //             Swal.fire({
+        //                 icon: 'info',
+        //                 title: 'Mode Complimentary',
+        //                 text: 'Harga item akan dihitung, namun total akhir transaksi akan menjadi Rp 0.',
+        //                 timer: 3000,
+        //                 showConfirmButton: false
+        //             });
+        //         }
+        //     });
+        // });
 
         document.querySelectorAll('.pos-product-card').forEach(card => {
             card.addEventListener('click', function() {
@@ -695,7 +1231,6 @@
                 openCustomizeModal(product);
             });
         });
-
 
         function openCustomizeModal(product) {
             document.getElementById('customizeProductName').textContent = product.name;
@@ -714,7 +1249,8 @@
                     let groupHtml = `<div class="mb-3"><h6>${group.name}</h6>`;
 
                     group.modifiers.forEach(modifier => {
-                        const inputType = group.selection_type === 'single' ? 'radio' : 'checkbox';
+                        const inputType = group.selection_type === 'single' ? 'radio' :
+                            'checkbox';
                         groupHtml += `
                         <div class="form-check">
                             <input class="form-check-input modifier-option" type="${inputType}" name="group-${group.id}" 
@@ -729,7 +1265,8 @@
                     container.innerHTML += groupHtml;
                 });
             } else {
-                container.innerHTML = '<p class="text-muted text-center">Tidak ada pilihan tambahan untuk item ini.</p>';
+                container.innerHTML =
+                    '<p class="text-muted text-center">Tidak ada pilihan tambahan untuk item ini.</p>';
             }
 
             updateModalTotal();
@@ -792,20 +1329,21 @@
                 });
             }
 
-            const cartItemId = currentProduct.id + '-' + selectedModifierIds.sort().join('-') + (notes ? '-' + btoa(
-                notes) : '');
+            const cartItemId = currentProduct.id + '-' + selectedModifierIds.sort().join('-') + (notes ?
+                '-' + btoa(
+                    notes) : '');
 
             const existingItem = cart.find(item => item.cartItemId === cartItemId);
 
             if (existingItem) {
-                existingItem.quantity += qty; // Tetap gunakan qty, sesuai logic frontend
+                existingItem.quantity += qty;
             } else {
                 cart.push({
                     cartItemId: cartItemId,
                     menu_item_id: currentProduct.id,
                     name: currentProduct.name,
                     price: currentProduct.price,
-                    quantity: qty, // Ganti 'qty' menjadi 'quantity' di field ini
+                    quantity: qty,
                     modifiers: selectedModifiers,
                     modifier_ids: selectedModifierIds,
                     notes: notes
@@ -829,7 +1367,8 @@
                 document.getElementById('btnCheckout').disabled = true;
             } else {
                 cartContainer.innerHTML = cart.map(item => {
-                    const modifiersPrice = item.modifiers.reduce((sum, mod) => sum + parseFloat(mod.price), 0);
+                    const modifiersPrice = item.modifiers.reduce((sum, mod) => sum + parseFloat(mod
+                        .price), 0);
                     const itemTotal = (item.price * item.quantity) + (modifiersPrice * item.quantity);
 
                     let modifiersHtml = item.modifiers.map(mod =>
@@ -918,9 +1457,86 @@
             document.getElementById('totalAmount').textContent = formatCurrency(total);
         }
 
-        document.getElementById('btnCheckout').addEventListener('click', function() {
-            document.getElementById('cartDataInput').value = JSON.stringify(cart);
-            document.getElementById('formToPayment').submit();
+        document.getElementById('btnCheckout').addEventListener('click', function(e) {
+            e.preventDefault(); // <-- 1. Cegah submit form biasa
+
+            const formElement = document.getElementById('formToPayment');
+            const url = formElement.action;
+            const currentType = document.querySelector('input[name="transaction_type_selector"]:checked').value;
+
+            // Siapkan data untuk dikirim
+            const dataToSend = {
+                cart_data: JSON.stringify(cart),
+                transaction_type: currentType,
+                _token: formElement.querySelector('input[name="_token"]').value // Ambil CSRF token
+            };
+
+            Swal.showLoading(); // Tampilkan loading
+
+            fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json', // Kirim sebagai JSON
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': dataToSend._token
+                    },
+                    body: JSON.stringify(dataToSend) // Ubah data jadi string JSON
+                })
+                .then(response => {
+                    if (response.redirected) {
+                        window.location.href = response.url; // Langsung redirect ke halaman payment
+                        return; // Hentikan eksekusi lebih lanjut
+                    }
+                    return response.json().then(data => ({
+                        data,
+                        status: response.status,
+                        ok: response.ok
+                    }));
+                })
+                .then(res => {
+                    if (!res) return; // Keluar jika sudah redirect
+
+                    const {
+                        data,
+                        ok
+                    } = res;
+                    Swal.close(); // Tutup loading
+
+                    if (ok && data.status === 'success' && data.is_complimentary === true) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Berhasil!',
+                            text: data.message || 'Transaksi Complimentary berhasil disimpan.',
+                            timer: 2500,
+                            showConfirmButton: false
+                        }).then(() => {
+                            window.location.href = data.redirect_url ||
+                            "{{ route('cashier.index') }}"; // Ambil URL dari JSON
+                        });
+                        cart = [];
+                        updateCartDisplay();
+                    } else if (!ok) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Gagal',
+                            text: data.message || 'Gagal memulai transaksi. Coba lagi.',
+                        });
+                    } else {
+                        console.warn("Unexpected response:", data);
+                        if (data.redirect_url) {
+                            window.location.href = data.redirect_url;
+                        }
+                    }
+                })
+                .catch(error => {
+                    Swal.close();
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error Jaringan',
+                        text: 'Tidak dapat terhubung ke server: ' + error.message,
+                    });
+                    console.error("Fetch error:", error);
+                });
         });
 
         const btnProcessPayment = document.getElementById('btnProcessPayment');
@@ -934,9 +1550,12 @@
                 }
 
                 const formData = new FormData(form);
+                const typeTransaksi = formData.get('transaction_type') ?? (document.getElementById(
+                    'transactionTypeInput')?.value ?? '');
+
                 const formattedItems = cart.map(item => ({
-                    menu_item_id: item.menu_item_id, // Pastikan ini yang dikirim, bukan `id`
-                    quantity: item.qty,
+                    menu_item_id: item.menu_item_id,
+                    quantity: item.quantity,
                     modifiers: item.modifier_ids,
                     notes: item.notes
                 }));
@@ -946,7 +1565,7 @@
                     amount: cart.reduce((sum, item) => {
                         const modifiersPrice = item.modifiers.reduce((s, mod) => s + parseFloat(mod
                             .price), 0);
-                        return sum + ((item.price + modifiersPrice) * item.qty);
+                        return sum + ((item.price + modifiersPrice) * item.quantity);
                     }, 0)
                 }];
 
@@ -957,6 +1576,7 @@
                     order_type: formData.get('order_type'),
                     notes: formData.get('notes'),
                     payments: payments,
+                    transaction_type: typeTransaksi
                 };
 
                 Swal.fire({
@@ -970,7 +1590,6 @@
                     cancelButtonText: 'Batal'
                 }).then((result) => {
                     if (result.isConfirmed) {
-                        // DO: POST to backend
                         const csrfTokenEl = document.querySelector('meta[name="csrf-token"]');
                         const csrfToken = csrfTokenEl ? csrfTokenEl.content : '';
                         fetch("{{ route('cashier.submit') }}", {
@@ -981,13 +1600,45 @@
                                 },
                                 body: JSON.stringify(orderData)
                             })
-                            .then(response => response.json())
-                            .then(data => {
-                                if (data.status === 'success') {
+                            .then(response => response.json()
+                                .then(data => ({
+                                    data,
+                                    status: response.status,
+                                    ok: response.ok
+                                }))
+                            )
+                            .then(res => {
+                                const {
+                                    data,
+                                    ok
+                                } = res;
+                                if (ok && orderData.transaction_type === 'complimentary') {
+                                    // Jika complimentary, munculkan swal langsung dari json dari backend
+                                    Swal.fire({
+                                        icon: data.swal_icon || 'success',
+                                        title: data.swal_title || 'Berhasil!',
+                                        text: data.swal_text || data.message ||
+                                            'Transaksi complimentary berhasil diproses!',
+                                        timer: data.swal_timer || 2000,
+                                        showConfirmButton: false
+                                    });
+                                    cart = [];
+                                    updateCartDisplay();
+                                    form.reset();
+                                    const modalCheckout = document.getElementById('modalCheckout');
+                                    if (modalCheckout) {
+                                        const modalInstance = bootstrap.Modal.getInstance(
+                                        modalCheckout);
+                                        if (modalInstance) {
+                                            modalInstance.hide();
+                                        }
+                                    }
+                                } else if (ok) {
                                     Swal.fire({
                                         icon: 'success',
                                         title: 'Berhasil!',
-                                        text: data.message || 'Transaksi berhasil diproses!',
+                                        text: data.message ||
+                                            'Transaksi berhasil diproses!',
                                         timer: 1800,
                                         showConfirmButton: false
                                     });
@@ -997,7 +1648,7 @@
                                     const modalCheckout = document.getElementById('modalCheckout');
                                     if (modalCheckout) {
                                         const modalInstance = bootstrap.Modal.getInstance(
-                                            modalCheckout);
+                                        modalCheckout);
                                         if (modalInstance) {
                                             modalInstance.hide();
                                         }
@@ -1006,7 +1657,7 @@
                                     Swal.fire({
                                         icon: 'error',
                                         title: 'Gagal',
-                                        text: data.message ||
+                                        text: (data && data.message) ||
                                             'Terjadi kesalahan saat memproses transaksi.',
                                     });
                                 }
@@ -1052,7 +1703,8 @@
                 </div>
             `).join('');
             } else {
-                resultsContainer.innerHTML = '<div class="search-no-results">Produk tidak ditemukan</div>';
+                resultsContainer.innerHTML =
+                    '<div class="search-no-results">Produk tidak ditemukan</div>';
             }
 
             resultsContainer.style.display = 'block';
@@ -1071,10 +1723,9 @@
                 const product = menuItemsData.find(item => item.id == productId);
 
                 if (product) {
-                    // Cek stok sebelum buka modal
                     if (product.calculated_stock > 0) {
                         resultsContainer.style.display = 'none';
-                        searchInput.value = ''; // Kosongkan input
+                        searchInput.value = '';
                         currentProduct = product;
                         openCustomizeModal(product);
                     } else {

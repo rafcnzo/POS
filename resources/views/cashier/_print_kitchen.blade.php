@@ -1,189 +1,123 @@
-<html lang="id">
+<!DOCTYPE html>
+<html>
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Struk Kitchen - Per Item</title>
+    <title>Struk Kitchen</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         @page {
             size: 80mm auto;
-            margin: 0;
+            margin: 3mm;
         }
 
         body {
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            font-weight: bold;
-            line-height: 1.4;
-            padding: 8px;
-            width: 80mm;
-            margin: 0 auto;
-            background: white;
+            font-family: monospace;
+            font-size: 12px;
+            width: 74mm;
+            margin: 0;
+            padding: 2mm;
+            line-height: 1.3;
         }
 
         .receipt {
-            border: 2px solid #000;
-            padding: 8px;
-            margin-bottom: 15px;
+            border: 2px solid black;
+            padding: 5mm;
+            margin-bottom: 5mm;
             page-break-after: always;
         }
 
         .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-            padding-bottom: 6px;
-            border-bottom: 2px solid #000;
+            border-bottom: 2px solid black;
+            padding-bottom: 3mm;
+            margin-bottom: 3mm;
         }
 
         .order-type {
-            font-size: 14px;
-            background: #000;
+            font-size: 16px;
+            font-weight: bold;
+            background: black;
             color: white;
-            padding: 3px 10px;
-        }
-
-        .order-type.takeaway {
-            background: #ff6600;
+            padding: 2mm;
+            display: inline-block;
         }
 
         .order-info {
-            font-size: 11px;
+            font-size: 10px;
             text-align: right;
+            margin-top: 2mm;
         }
 
-        .table-section {
+        .table-box {
             text-align: center;
-            padding: 8px 0;
-            margin: 6px 0;
-            border: 2px solid #000;
-            background: #f5f5f5;
-        }
-
-        .table-section.hidden {
-            display: none;
+            border: 2px solid black;
+            padding: 3mm;
+            margin: 3mm 0;
+            background: #f0f0f0;
         }
 
         .table-label {
-            font-size: 11px;
-            margin-bottom: 2px;
+            font-size: 10px;
         }
 
         .table-number {
-            font-size: 22px;
+            font-size: 24px;
             font-weight: bold;
-            letter-spacing: 2px;
-        }
-
-        .queue-section {
-            text-align: center;
-            padding: 8px 0;
-            margin: 6px 0;
-            border: 2px solid #ff6600;
-            background: #fff3e6;
-        }
-
-        .queue-section.hidden {
-            display: none;
-        }
-
-        .queue-label {
-            font-size: 11px;
-            margin-bottom: 2px;
-        }
-
-        .queue-number {
-            font-size: 22px;
-            font-weight: bold;
-            letter-spacing: 2px;
-            color: #ff6600;
-        }
-
-        .divider {
-            border-top: 1px dashed #000;
-            margin: 6px 0;
-        }
-
-        .item-main {
-            text-align: center;
-            margin: 10px 0;
+            margin-top: 1mm;
         }
 
         .item-qty {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: bold;
-            margin-bottom: 5px;
+            text-align: center;
+            margin: 3mm 0;
         }
 
         .item-name {
-            font-size: 18px;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            padding: 6px;
-            border: 2px solid #000;
-            background: #fff;
+            border: 2px solid black;
+            padding: 3mm;
+            margin: 2mm 0;
         }
 
-        .item-notes {
-            text-align: left;
-            padding: 6px;
-            background: #fffacd;
-            border: 1px solid #000;
-            margin: 6px 0;
+        .notes-box {
+            background: #ffffcc;
+            border: 1px solid black;
+            padding: 2mm;
+            margin: 2mm 0;
+            font-size: 10px;
         }
 
         .notes-title {
-            font-size: 11px;
-            margin-bottom: 3px;
+            font-weight: bold;
+            margin-bottom: 1mm;
         }
 
-        .notes-content {
-            font-size: 10px;
-            font-weight: normal;
-            line-height: 1.5;
+        .divider {
+            border-top: 1px dashed black;
+            margin: 3mm 0;
         }
 
-        .customer-info {
-            font-size: 10px;
-            margin: 6px 0;
-            padding: 5px;
-            background: #f9f9f9;
+        .customer-box {
+            background: #f5f5f5;
             border: 1px solid #999;
-        }
-
-        .customer-info.takeaway {
-            background: #fff3e6;
-            border-color: #ff6600;
-        }
-
-        .customer-info div {
-            margin-bottom: 2px;
+            padding: 2mm;
+            font-size: 10px;
+            margin: 2mm 0;
         }
 
         .footer {
             text-align: center;
-            margin-top: 6px;
-            padding-top: 5px;
-            border-top: 1px solid #000;
             font-size: 9px;
-            font-weight: normal;
+            border-top: 1px solid black;
+            padding-top: 2mm;
+            margin-top: 3mm;
         }
 
-        @media print {
-            body {
-                width: 80mm;
-            }
-
-            .receipt {
-                border: 2px solid #000;
-            }
+        .hidden {
+            display: none;
         }
     </style>
 </head>
@@ -191,85 +125,89 @@
 <body>
     @php
         use Carbon\Carbon;
-        $count = 0;
-        $items = $sale->items ?? [];
+        $items = $itemsToPrint ?? ($sale->items ?? []);
         $userName = $sale->user->name ?? '-';
-        $orderType = strtoupper($sale->order_type ?? 'dine_in');
         $orderTypeText = ($sale->order_type ?? 'dine_in') === 'take_away' ? 'TAKE AWAY' : 'DINE-IN';
-        $orderTypeClass = ($sale->order_type ?? 'dine_in') === 'take_away' ? 'order-type takeaway' : 'order-type';
-        $showTable = (strtolower($sale->order_type) == 'dine_in') && !empty($sale->table_number);
-        $showQueue = (strtolower($sale->order_type) == 'take_away') && !empty($sale->queue_number ?? null);
-        $orderDate = Carbon::parse($sale->created_at ?? now())->format('d/m/Y H:i');
-        $orderShortDate = Carbon::parse($sale->created_at ?? now())->format('d/m H:i');
-        $custName = $sale->customer_name ?? '-';
+        $showTable = strtolower($sale->order_type ?? 'dine_in') == 'dine_in' && !empty($sale->table_number);
+        $showQueue = strtolower($sale->order_type ?? 'dine_in') == 'take_away' && !empty($sale->queue_number ?? null);
         $trxCode = $sale->transaction_code ?? '-';
+        $custName = $sale->customer_name ?? '-';
     @endphp
 
-    @foreach($items as $index => $item)
+    @forelse($items as $index => $item)
         <div class="receipt">
+            <!-- HEADER -->
             <div class="header">
-                <div class="{{ $orderTypeClass }}">
-                    {{ $orderTypeText }}
-                </div>
+                <div class="order-type">{{ $orderTypeText }}</div>
                 <div class="order-info">
                     #{{ $trxCode }}<br>
-                    {{ $orderShortDate }}
+                    {{ Carbon::parse($sale->created_at ?? now())->format('d/m H:i') }}
                 </div>
             </div>
 
-            <div class="table-section{{ $showTable ? '' : ' hidden' }}">
-                <div class="table-label">MEJA</div>
-                <div class="table-number">{{ $sale->table_number ?? '-' }}</div>
-            </div>
-
-            <div class="queue-section{{ $showQueue ? '' : ' hidden' }}">
-                <div class="queue-label">NO. ANTRIAN</div>
-                <div class="queue-number">{{ $sale->queue_number ?? '-' }}</div>
-            </div>
-
-            <div class="item-main">
-                <div class="item-qty">{{ $item->quantity }}x</div>
-                <div class="item-name">
-                    {{ strtoupper($item->menuItem->name ?? '-') }}
-                </div>
-            </div>
-
-            @if($item->selectedModifiers && $item->selectedModifiers->count())
-                <div class="item-notes">
-                    <div class="notes-title">MODIFIER:</div>
-                    <div class="notes-content">
-                        @foreach($item->selectedModifiers as $mod)
-                            - {{ $mod->modifier->name ?? '-' }}<br>
-                        @endforeach
-                    </div>
+            <!-- TABLE/QUEUE -->
+            @if ($showTable)
+                <div class="table-box">
+                    <div class="table-label">MEJA</div>
+                    <div class="table-number">{{ $sale->table_number }}</div>
                 </div>
             @endif
 
-            @if(!empty($item->notes))
-                <div class="item-notes">
+            @if ($showQueue)
+                <div class="table-box">
+                    <div class="table-label">NO. ANTRIAN</div>
+                    <div class="table-number">{{ $sale->queue_number }}</div>
+                </div>
+            @endif
+
+            <!-- ITEM -->
+            <div class="item-qty">{{ $item->quantity }}x</div>
+            <div class="item-name">{{ strtoupper($item->menuItem->name ?? '-') }}</div>
+
+            <!-- MODIFIERS -->
+            @if ($item->selectedModifiers && $item->selectedModifiers->count())
+                <div class="notes-box">
+                    <div class="notes-title">MODIFIER:</div>
+                    @foreach ($item->selectedModifiers as $mod)
+                        - {{ $mod->modifier->name ?? '-' }}<br>
+                    @endforeach
+                </div>
+            @endif
+
+            <!-- NOTES -->
+            @if (!empty($item->notes))
+                <div class="notes-box">
                     <div class="notes-title">CATATAN:</div>
-                    <div class="notes-content">
-                        {!! nl2br(e($item->notes)) !!}
-                    </div>
+                    {{ $item->notes }}
                 </div>
             @endif
 
             <div class="divider"></div>
 
-            <div class="customer-info {{ ($sale->order_type??'') == 'take_away' ? 'takeaway' : '' }}">
+            <!-- CUSTOMER INFO -->
+            <div class="customer-box">
                 <div>Pelanggan: {{ $custName }}</div>
                 <div>Kasir: {{ $userName }}</div>
             </div>
 
+            <!-- FOOTER -->
             <div class="footer">
-                {{ Carbon::parse($sale->created_at ?? now())->format('d/m/Y H:i:s') }} | Item {{ $index+1 }}/{{ count($items) }}
+                {{ Carbon::parse($sale->created_at ?? now())->format('d/m/Y H:i:s') }}<br>
+                Item {{ $index + 1 }}/{{ count($items) }}
             </div>
         </div>
-    @endforeach
+    @empty
+        <div style="text-align:center; padding:20px;">
+            Tidak ada item untuk dicetak
+        </div>
+    @endforelse
+
+    <script>
+        // Small delay before print to ensure content is loaded
+        setTimeout(function() {
+            window.print();
+        }, 100);
+    </script>
 </body>
-<script>    
-    window.onload = function() {
-        window.print();
-    }
-</script>
+
 </html>

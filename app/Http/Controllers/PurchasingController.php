@@ -243,8 +243,19 @@ class PurchasingController extends Controller
 
         try {
             DB::transaction(function () use ($request, $validated, &$updatedStocks) {
-                $date           = now()->format('Ymd');
-                $receipt_number = 'GR-' . $date . '-';
+                $date = now()->format('Ymd');
+
+                // Cari angka urut terakhir untuk receipt_number hari ini
+                $lastReceipt = GoodsReceipt::whereDate('created_at', now()->toDateString())
+                    ->orderByDesc('id')
+                    ->first();
+
+                if ($lastReceipt && preg_match('/^GR-' . $date . '-(\d+)$/', $lastReceipt->receipt_number, $matches)) {
+                    $urut = (int)$matches[1] + 1;
+                } else {
+                    $urut = 1;
+                }
+                $receipt_number = 'GR-' . $date . '-' . str_pad($urut, 3, '0', STR_PAD_LEFT);
 
                 $proofPath = null;
                 if ($request->hasFile('proof_document')) {

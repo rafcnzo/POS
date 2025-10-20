@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\AdminController;
+use App\Models\Sale;
+use App\Models\Setting;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\CashierController;
 use App\Http\Controllers\KitchenController;
@@ -36,6 +38,11 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('/backup/create', [AdminController::class, 'backupCreate'])->name('backup.create');
         Route::get('/backup/{id}/download', [AdminController::class, 'backupDownload'])->name('backup.download');
         Route::delete('/backup/{id}/delete', [AdminController::class, 'backupDestroy'])->name('backup.destroy');
+
+        Route::get('/karyawan', [AdminController::class, 'karyawanIndex'])->name('karyawan.index');
+        Route::post('/mst/karyawan', [AdminController::class, 'karyawanStore'])->name('karyawan.store');
+        Route::delete('/mst/karyawan/{id}', [AdminController::class, 'karyawanDestroy'])->name('karyawan.destroy');
+
     });
 
 });
@@ -46,6 +53,11 @@ Route::middleware(['auth'])->prefix('acc')->name('acc.')->group(function () {
         Route::get('/suppliers', [AccountingController::class, 'suppliersIndex'])->name('suppliers.index');
         Route::post('/suppliers/submit', [AccountingController::class, 'suppliersSubmit'])->name('suppliers.submit');
         Route::delete('/suppliers/{supplier}', [AccountingController::class, 'suppliersDestroy'])->name('suppliers.destroy');
+        Route::get('payroll', [AccountingController::class, 'payrollIndex'])->name('payroll.index');
+        Route::post('payroll/store', [AccountingController::class, 'payrollStore'])->name('payroll.store');
+        Route::delete('payroll/destroy/{id}', [AccountingController::class, 'payrollDestroy'])->name('payroll.destroy');
+        Route::get('payroll/download/{id}', [AccountingController::class, 'downloadBukti'])->name('payroll.download');
+
         Route::get('/credit-limit-monitoring', [AccountingController::class, 'creditLimitMonitoring'])->name('suppliers.credit_limit_monitoring');
 
         Route::get('/laporan-penjualan', [AccountingController::class, 'salesReport'])->name('laporan-penjualan');
@@ -116,6 +128,7 @@ Route::middleware(['auth'])->prefix('cashier')->name('cashier.')->group(function
         Route::get('/history', [CashierController::class, 'History'])->name('history');
         Route::get('/sales/{sale}/print/customer', [CashierController::class, 'printCustomerReceipt'])->name('print.customer');
         Route::get('/sales/{sale}/print/kitchen', [CashierController::class, 'printKitchenReceipt'])->name('print.kitchen');
+        Route::post('/sales/{id}/print/smart', [CashierController::class, 'smartPrintAfterPayment'])->name('payment.print.smart');
         Route::post('/start-transaction', [CashierController::class, 'startTransaction'])->name('startTransaction');
         Route::get('/payment/{sale}', [CashierController::class, 'showPaymentPage'])->name('payment.page');
         Route::post('/payment/{sale}/process', [CashierController::class, 'processPayment'])->name('payment.process');
@@ -123,7 +136,18 @@ Route::middleware(['auth'])->prefix('cashier')->name('cashier.')->group(function
 
         Route::get('/history', [CashierController::class, 'historyIndex'])->name('history');
         Route::get('/history/{sale}', [CashierController::class, 'historyShow'])->name('history.show');
+
+        Route::post('/reservations/store', [CashierController::class, 'storeReservation'])->name('reservations.store');
+
     });
+});
+
+Route::get('/test-print/{id}', function ($id) {
+    $sale         = Sale::with(['user', 'items.menuItem.menuCategory', 'items.selectedModifiers.modifier'])->findOrFail($id);
+    $settings     = Setting::pluck('value', 'key')->toArray();
+    $itemsToPrint = $sale->items;
+
+    return view('cashier._print_kitchen', compact('sale', 'itemsToPrint', 'settings'));
 });
 
 // Route::get('/test-printers', function () {

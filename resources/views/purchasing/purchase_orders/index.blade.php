@@ -135,15 +135,15 @@
 
     <!-- Modal Tambah PO -->
     <div class="modal fade" id="modalTambahPO" tabindex="-1" aria-labelledby="modalTambahPOLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <form id="formTambahPO" enctype="multipart/form-data">
+        <div class="modal-dialog modal-lg" style="max-width: 900px;">
+            <div class="modal-content" style="max-height:90vh; overflow:hidden; display:flex; flex-direction:column;">
+                <form id="formTambahPO" enctype="multipart/form-data" style="height:100%;">
                     <div class="modal-header">
                         <h5 class="modal-title" id="modalTambahPOLabel"><i class="bi bi-plus-circle"></i> Tambah Purchase
                             Order</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
                     </div>
-                    <div class="modal-body">
+                    <div class="modal-body" style="overflow-y:auto; max-height:60vh;">
                         <div id="formPOAlert" style="display:none"></div>
                         <div class="mb-3">
                             <label for="supplier_id" class="form-label">Pilih Supplier <span
@@ -195,7 +195,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer">
+                    <div class="modal-footer" style="flex-shrink:0;">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
                         <button type="submit" class="btn btn-primary">Simpan PO</button>
                     </div>
@@ -206,22 +206,22 @@
 
     <!-- Modal Detail PO (Show) -->
     <div class="modal fade" id="modalDetailPO" tabindex="-1" aria-labelledby="modalDetailPOLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
+        <div class="modal-dialog modal-lg" style="max-width: 900px;">
+            <div class="modal-content" style="max-height:90vh; overflow:hidden; display:flex; flex-direction:column;">
                 <div class="modal-header">
                     <h5 class="modal-title" id="modalDetailPOLabel">
                         <i class="bi bi-eye"></i> Detail Purchase Order
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body" style="overflow-y:auto; max-height:60vh;">
                     <div id="poDetailLoading" class="text-center py-4" style="display: none;">
                         <div class="spinner-border" role="status"></div>
                         <div>Memuat detail PO...</div>
                     </div>
                     <div id="poDetailContent" style="display: none;"></div>
                 </div>
-                <div class="modal-footer d-flex justify-content-between">
+                <div class="modal-footer d-flex justify-content-between" style="flex-shrink:0;">
                     <a id="btnPrintPO" href="#" class="btn btn-outline-secondary" target="_blank" style="display: none;">
                         <i class="bi bi-printer"></i> Print PO
                     </a>

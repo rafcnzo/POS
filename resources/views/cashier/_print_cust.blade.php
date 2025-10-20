@@ -289,62 +289,56 @@
         </div>
 
         {{-- Summary --}}
-        <div class="summary">
-            <div class="summary-row">
-                <span class="summary-label">SUB TOTAL</span>
-                <span class="summary-value">{{ number_format($sale->subtotal ?? 0, 0, ',', '.') }}</span>
-            </div>
-            {{-- Discount / tambahan: edit as needed --}}
-            @if (isset($sale->discount_amount) && $sale->discount_amount > 0)
-                <div class="summary-row">
-                    <span class="summary-label">Diskon</span>
-                    <span class="summary-value">-{{ number_format($sale->discount_amount, 0, ',', '.') }}</span>
-                </div>
-            @endif
-            @if (isset($sale->additional) && $sale->additional > 0)
-                <div class="summary-row">
-                    <span class="summary-label">Tambahan</span>
-                    <span class="summary-value">{{ number_format($sale->additional, 0, ',', '.') }}</span>
-                </div>
-            @endif
-            @if (isset($sale->tax_amount) && $sale->tax_amount > 0)
-                <div class="summary-row">
-                    <span class="summary-label">Pajak</span>
-                    <span class="summary-value">{{ number_format($sale->tax_amount, 0, ',', '.') }}</span>
-                </div>
-            @endif
+        <hr>
+        <div>Subtotal: {{ number_format($sale->subtotal, 0, ',', '.') }}</div>
+        {{-- Tampilkan diskon jika ada & bukan complimentary --}}
+        @if($sale->discount_amount > 0 && $sale->type !== \App\Models\Sale::TYPE_COMPLIMENTARY)
+            <div>Diskon: -{{ number_format($sale->discount_amount, 0, ',', '.') }}</div>
+        @endif
+        {{-- Tampilkan pajak jika ada & bukan complimentary --}}
+        @if($sale->tax_amount > 0 && $sale->type !== \App\Models\Sale::TYPE_COMPLIMENTARY)
+            <div>Pajak: {{ number_format($sale->tax_amount, 0, ',', '.') }}</div>
+        @endif
+        <hr>
+        <div style="font-weight: bold;">TOTAL: {{ number_format($sale->total_amount, 0, ',', '.') }}</div>
+        <hr>
 
-            <div class="divider"></div>
-
-            <div class="summary-row total-row">
-                <span class="summary-label">TOTAL</span>
-                <span class="summary-value">{{ number_format($sale->total_amount ?? 0, 0, ',', '.') }}</span>
-            </div>
-            {{-- Payments --}}
+        {{-- === BAGIAN PEMBAYARAN YANG DIPERBAIKI === --}}
+        @if ($sale->type === \App\Models\Sale::TYPE_COMPLIMENTARY)
+            {{-- Jika Complimentary --}}
+            <div>Status: <b>COMPLIMENTARY</b></div>
+            {{-- Tidak perlu detail bayar/kembali --}}
+        @else
+            {{-- Jika Bukan Complimentary (Regular / Employee Meal) --}}
             @php
-                $payment = $sale->payments->first();
-
-                $cashReceived = $payment->cash_received ?? 0;
-                $changeAmount = $payment->change_amount ?? 0;
-
-                $tunai = $payment->payment_method == 'cash' ? $cashReceived : 0;
-                $nontunai = $payment->payment_method != 'cash' ? $sale->total_amount : 0;
+                // Ambil payment customer (bukan deposit)
+                $customerPayment = $sale->payments->where('payment_method', '!=', 'Deposit Reservasi')->first();
+                // Ambil payment deposit (jika ada)
+                $depositPayment = $sale->payments->where('payment_method', 'Deposit Reservasi')->first();
             @endphp
-            <div class="summary-row">
-                <span class="summary-label">Tunai</span>
-                <span class="summary-value">{{ number_format($cashReceived, 0, ',', '.') }}</span>
-            </div>
-            @if ($nontunai > 0)
-                <div class="summary-row">
-                    <span class="summary-label">Non Tunai</span>
-                    <span class="summary-value">{{ number_format($nontunai, 0, ',', '.') }}</span>
-                </div>
+
+            @if ($depositPayment)
+                <div>Deposit Digunakan: {{ number_format($depositPayment->amount, 0, ',', '.') }}</div>
             @endif
-            <div class="summary-row">
-                <span class="summary-label">Kembali</span>
-                <span class="summary-value">{{ number_format($changeAmount, 0, ',', '.') }}</span>
-            </div>
-        </div>
+
+            @if ($customerPayment)
+                <div>Metode Bayar: {{ $customerPayment->payment_method }}</div>
+                {{-- Tampilkan Dibayar & Kembali hanya jika ada payment customer --}}
+                @if ($customerPayment->payment_method === 'cash')
+                    <div>Dibayar (Tunai): {{ number_format($customerPayment->cash_received ?? $customerPayment->amount, 0, ',', '.') }}</div>
+                    <div>Kembali: {{ number_format($customerPayment->change_amount ?? 0, 0, ',', '.') }}</div>
+                @else
+                    <div>Dibayar ({{ $customerPayment->payment_method }}): {{ number_format($customerPayment->amount, 0, ',', '.') }}</div>
+                    {{-- Tidak ada kembalian untuk non-cash --}}
+                @endif
+            @elseif (!$depositPayment && $sale->total_amount == 0)
+                {{-- Kasus khusus jika total 0 tapi bukan complimentary (misal diskon 100%) --}}
+                <div>Status: Lunas (Diskon 100%)</div>
+            @else
+                {{-- Jika tidak ada payment customer sama sekali (seharusnya tidak terjadi jika status completed) --}}
+                <div>Status Pembayaran: Belum Diproses</div>
+            @endif
+        @endif
 
         <div class="footer">
             <div class="thank-you">

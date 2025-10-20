@@ -120,16 +120,16 @@
 
     <!-- Modal Tambah Penerimaan -->
     <div class="modal fade" id="modalTambahPenerimaan" tabindex="-1" aria-labelledby="modalTambahPenerimaanLabel"
-        aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <form id="formTambahPenerimaan" enctype="multipart/form-data">
-                    <div class="modal-header">
+        aria-hidden="true" style="--bs-modal-width: 800px;">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable" style="max-width: 800px; margin: 0 auto;">
+            <div class="modal-content" style="max-height:90vh; overflow:hidden; display:flex; flex-direction:column;">
+                <form id="formTambahPenerimaan" enctype="multipart/form-data" style="height:100%;display:flex;flex-direction:column;">
+                    <div class="modal-header" style="flex-shrink: 0;">
                         <h5 class="modal-title" id="modalTambahPenerimaanLabel"><i class="bi bi-plus-circle"></i> Tambah
                             Penerimaan Barang</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
                     </div>
-                    <div class="modal-body">
+                    <div class="modal-body" style="overflow-y:auto; max-height:60vh; flex-grow:1;">
                         <div id="formPenerimaanAlert" style="display:none"></div>
                         <div class="mb-3">
                             <label for="purchase_order_id" class="form-label">Pilih No. PO</label>
@@ -157,7 +157,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer">
+                    <div class="modal-footer" style="flex-shrink:0;">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
                         <button type="submit" class="btn btn-primary">Simpan Penerimaan</button>
                     </div>
@@ -167,23 +167,23 @@
     </div>
 
     <div class="modal fade" id="modalDetailPenerimaan" tabindex="-1" aria-labelledby="modalDetailPenerimaanLabel"
-        aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
+        aria-hidden="true" style="--bs-modal-width: 800px;">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable" style="max-width: 800px; margin: 0 auto;">
+            <div class="modal-content" style="max-height:90vh; display:flex; flex-direction:column;">
+                <div class="modal-header" style="flex-shrink: 0;">
                     <h5 class="modal-title" id="modalDetailPenerimaanLabel">
                         <i class="bi bi-eye"></i> Detail Penerimaan Barang
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body" style="overflow-y: auto; flex-grow:1;">
                     <div id="penerimaanDetailLoading" class="text-center py-4 d-none">
                         <div class="spinner-border" role="status"></div>
                         <div>Memuat detail penerimaan...</div>
                     </div>
                     <div id="penerimaanDetailContent" class="d-none"></div>
                 </div>
-                <div class="modal-footer justify-content-end">
+                <div class="modal-footer justify-content-end" style="flex-shrink:0;">
                     {{-- <a id="btnPrintPenerimaan" href="#" class="btn btn-outline-secondary d-none" target="_blank">
                         <i class="bi bi-printer"></i> Print Penerimaan
                     </a> --}}

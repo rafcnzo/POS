@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -20,6 +19,9 @@ class Payment extends Model
         'payment_method',
         'amount',
         'reference_number',
+        'reservation_id',
+        'cash_received',
+        'change_amount',
     ];
 
     /**
@@ -28,5 +30,10 @@ class Payment extends Model
     public function sale(): BelongsTo
     {
         return $this->belongsTo(Sale::class);
+    }
+
+    public function reservation(): BelongsTo
+    {
+        return $this->belongsTo(Reservation::class);
     }
 }

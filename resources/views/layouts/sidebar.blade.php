@@ -39,6 +39,20 @@
                         </li>
                     </ul>
                 </li>
+                <li>
+                    <a href="#" class="has-arrow">
+                        <div class="parent-icon"><i class="bi bi-people-fill"></i></div>
+                        <div class="menu-title">Man Power</div>
+                    </a>
+                    <ul>
+                        <li>
+                            <a href="{{ route('admin.karyawan.index') }}"><i class="bi bi-person-badge"></i>Master Karyawan</a>
+                        </li>
+                        <li>
+                            <a href="{{ route('acc.payroll.index') }}"><i class="bi bi-cash-coin"></i>Penggajian Bulanan</a>
+                        </li>
+                    </ul>
+                </li>
             @endrole
             @hasanyrole('Super Admin|HeadBar|HeadKitchen')
                 <li class="menu-label">Kitchen</li>

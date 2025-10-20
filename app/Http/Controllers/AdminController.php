@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use App\Models\DatabaseBackup;
 use App\Models\EnergyCost;
 use App\Models\Ingredient;
+use App\Models\Karyawan;
 use App\Models\MenuItem;
 use App\Models\PurchaseOrder;
 use App\Models\Sale;
@@ -175,12 +176,12 @@ class AdminController extends Controller
             $busiestHour = "{$startTime} - {$endTime}";
         }
 
-        $salesChartLabels   = [];
-        $dateKeys = [];
+        $salesChartLabels = [];
+        $dateKeys         = [];
         for ($i = 6; $i >= 0; $i--) {
-            $date       = now()->subDays($i);
-            $salesChartLabels[]   = $date->translatedFormat('D');
-            $dateKeys[] = $date->format('Y-m-d');
+            $date               = now()->subDays($i);
+            $salesChartLabels[] = $date->translatedFormat('D');
+            $dateKeys[]         = $date->format('Y-m-d');
         }
 
         $salesData = Sale::query()
@@ -519,4 +520,64 @@ class AdminController extends Controller
         }
     }
 
+    public function karyawanIndex()
+    {
+        $karyawans = Karyawan::get();
+        return view('admin.karyawans.index', compact('karyawans'));
+    }
+
+    public function karyawanStore(Request $request)
+    {
+        $validated = $request->validate([
+            'no_karyawan'    => 'required|string|unique:karyawans,no_karyawan,' . $request->id,
+            'nama'           => 'required|string',
+            'department'     => 'nullable|string',
+            'position'       => 'nullable|string',
+            'alamat'         => 'nullable|string',        
+            'no_hp'          => 'nullable|string|max:20', 
+            'kontak_darurat' => 'nullable|string|max:100',
+        ]);
+
+        try {
+            if ($request->filled('id')) {
+                // Update
+                $karyawan = Karyawan::findOrFail($request->id);
+                $karyawan->update($validated);
+                $message = 'Data karyawan berhasil diperbarui.';
+            } else {
+                // Create
+                $karyawan = Karyawan::create($validated);
+                $message  = 'Data karyawan berhasil ditambahkan.';
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => $message,
+                'data'    => $karyawan,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function karyawanDestroy($id)
+    {
+        try {
+            $karyawan = Karyawan::findOrFail($id);
+            $karyawan->delete();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Data karyawan berhasil dihapus.',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Gagal menghapus data karyawan: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 }

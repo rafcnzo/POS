@@ -65,18 +65,12 @@
                                         <label for="daily_sales_target" class="form-label-custom">
                                             <i class="bi bi-flag"></i> Target Penjualan Harian (Rp)
                                         </label>
-                                        <input type="number" class="form-control-custom" id="daily_sales_target" name="daily_sales_target"
-                                            min="0" step="1"
+                                        <input type="number" class="form-control-custom" id="daily_sales_target"
+                                            name="daily_sales_target" min="0" step="1"
                                             value="{{ isset($settings['daily_sales_target']) ? $settings['daily_sales_target'] : '' }}"
                                             placeholder="Masukkan target penjualan harian">
-                                        <small class="form-text text-muted">Isi target penjualan harian (dalam Rupiah, tanpa titik/koma).</small>
-                                    </div>
-
-                                    <div class="form-group-custom">
-                                        <label for="store_address" class="form-label-custom">
-                                            <i class="bi bi-geo-alt"></i> Alamat
-                                        </label>
-                                        <textarea class="form-control-custom" id="store_address" name="store_address" rows="3" placeholder="Alamat Toko">{{ $settings['store_address'] ?? '' }}</textarea>
+                                        <small class="form-text text-muted">Isi target penjualan harian (dalam Rupiah, tanpa
+                                            titik/koma).</small>
                                     </div>
                                 </div>
                                 <div class="col-md-6 mb-3" style="padding-left: 2rem;">
@@ -93,6 +87,20 @@
                                                 style="max-height: 80px; background: #f0f0f0; padding: 8px 12px; border-radius: 8px;">
                                         </div>
                                     @endif
+                                    <div class="form-group-custom">
+                                        <label for="store_address" class="form-label-custom">
+                                            <i class="bi bi-geo-alt"></i> Alamat
+                                        </label>
+                                        <textarea class="form-control-custom" id="store_address" name="store_address" rows="3" placeholder="Alamat Toko">{{ $settings['store_address'] ?? '' }}</textarea>
+                                    </div>
+                                    <div class="form-group-custom">
+                                        <label for="authorization_password" class="form-label-custom">
+                                            <i class="bi bi-shield-lock"></i> Password Otorisasi
+                                        </label>
+                                        <input type="password" class="form-control-custom" id="authorization_password" name="authorization_password" 
+                                            value="{{ $settings['authorization_password'] ?? '' }}" placeholder="Password Otorisasi">
+                                        <small class="form-text text-muted">Masukkan password yang akan digunakan untuk tindakan otorisasi.</small>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -127,6 +135,23 @@
                                         </select>
                                     </div>
                                     <div class="form-group-custom">
+                                        <label for="printer_kasir" class="form-label-custom">
+                                            <i class="bi bi-printer"></i> Printer Opsional
+                                        </label>
+                                        <select class="form-select form-control-custom" id="printer_opsional"
+                                            name="printer_opsional">
+                                            <option value="">-- Pilih Printer --</option>
+                                            @forelse ($printers as $printer)
+                                                <option value="{{ $printer['name'] }}"
+                                                    {{ ($settings['printer_opsional'] ?? '') == $printer['name'] ? 'selected' : '' }}>
+                                                    {{ $printer['name'] }}
+                                                </option>
+                                            @empty
+                                                <option value="" disabled>Tidak ada printer terdeteksi</option>
+                                            @endforelse
+                                        </select>
+                                    </div>
+                                    <div class="form-group-custom">
                                         <label for="receipt_footer_text" class="form-label-custom">
                                             <i class="bi bi-card-text"></i> Teks Tambahan di Struk (Footer)
                                         </label>
@@ -137,12 +162,31 @@
                                 <div class="col-md-6">
                                     <div class="form-group-custom">
                                         <label for="printer_dapur" class="form-label-custom">
-                                            <i class="bi bi-printer"></i> Printer Dapur
+                                            <i class="bi bi-printer"></i> Printer Kitchen
                                         </label>
-                                        <select class="form-select form-control-custom" id="printer_dapur" name="printer_dapur">
+                                        <select class="form-select form-control-custom" id="printer_dapur"
+                                            name="printer_dapur">
                                             <option value="">-- Pilih Printer --</option>
                                             @forelse ($printers as $printer)
-                                                <option value="{{ $printer['name'] }}" {{ ($settings['printer_dapur'] ?? '') == $printer['name'] ? 'selected' : '' }}>
+                                                <option value="{{ $printer['name'] }}"
+                                                    {{ ($settings['printer_dapur'] ?? '') == $printer['name'] ? 'selected' : '' }}>
+                                                    {{ $printer['name'] }}
+                                                </option>
+                                            @empty
+                                                <option value="" disabled>Tidak ada printer terdeteksi</option>
+                                            @endforelse
+                                        </select>
+                                    </div>
+                                    <div class="form-group-custom">
+                                        <label for="printer_bar" class="form-label-custom">
+                                            <i class="bi bi-printer"></i> Printer Bar
+                                        </label>
+                                        <select class="form-select form-control-custom" id="printer_bar"
+                                            name="printer_bar">
+                                            <option value="">-- Pilih Printer --</option>
+                                            @forelse ($printers as $printer)
+                                                <option value="{{ $printer['name'] }}"
+                                                    {{ ($settings['printer_bar'] ?? '') == $printer['name'] ? 'selected' : '' }}>
                                                     {{ $printer['name'] }}
                                                 </option>
                                             @empty

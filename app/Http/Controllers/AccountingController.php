@@ -2,13 +2,17 @@
 namespace App\Http\Controllers;
 
 use App\Exports\SalesReportExport;
+use App\Models\Karyawan;
+use App\Models\Payroll;
 use App\Models\Sale;
 use App\Models\Setting;
 use App\Models\Supplier;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Maatwebsite\Excel\Facades\Excel;
 
 class AccountingController extends Controller
@@ -21,18 +25,58 @@ class AccountingController extends Controller
 
     public function suppliersSubmit(Request $request)
     {
+        $supplierId = $request->input('id'); // Ambil ID jika ada (untuk update)
+
         $validated = $request->validate([
             'name'           => 'required|string|max:255',
-            'contact_person' => 'nullable|string|max:255',
+            'contact_person' => 'nullable|string|max:100',
             'phone'          => 'nullable|string|max:20',
             'address'        => 'nullable|string',
-            'credit_limit'   => 'required|numeric|min:0',
+            'type'           => [
+                'required',
+                Rule::in([Supplier::TYPE_TEMPO, Supplier::TYPE_PETTY_CASH]),
+            ],
+            'jatuh_tempo1'   => 'nullable|required_if:type,' . Supplier::TYPE_TEMPO . '|date', // Wajib jika Tempo
+            'jatuh_tempo2'   => 'nullable|date|after_or_equal:jatuh_tempo1',                   // Opsional, harus setelah tempo1 jika diisi
+        ], [
+            // Pesan error custom
+            'credit_limit.required_if'    => 'Limit kredit wajib diisi untuk supplier tipe Tempo.',
+            'jatuh_tempo1.required_if'    => 'Tanggal Jatuh Tempo 1 wajib diisi untuk supplier tipe Tempo.',
+            'jatuh_tempo2.after_or_equal' => 'Tanggal Jatuh Tempo 2 harus sama atau setelah Tanggal Jatuh Tempo 1.',
         ]);
 
-        Supplier::updateOrCreate(['id' => $request->id], $validated);
+        if ($validated['type'] === Supplier::TYPE_PETTY_CASH) {
+            $validated['credit_limit'] = 0;
+            $validated['jatuh_tempo1'] = null; 
+            $validated['jatuh_tempo2'] = null; 
+        } else {
+            $validated['credit_limit'] = $validated['credit_limit'] ?? 0;
+        }
 
-        $message = $request->id ? 'Data supplier berhasil diperbarui.' : 'Supplier baru berhasil ditambahkan.';
-        return response()->json(['status' => 'success', 'message' => $message]);
+        try {
+            if ($supplierId) {
+                // Update
+                $supplier = Supplier::findOrFail($supplierId);
+                $supplier->update($validated);
+                $message = 'Data supplier berhasil diperbarui.';
+            } else {
+                $supplier = Supplier::create($validated);
+                $message  = 'Supplier baru berhasil ditambahkan.';
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => $message,
+                'data'    => $supplier,
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error("Error saving supplier: " . $e->getMessage());
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Terjadi kesalahan saat menyimpan data supplier.',
+            ], 500);
+        }
     }
 
     public function suppliersDestroy(Supplier $supplier)
@@ -132,7 +176,7 @@ class AccountingController extends Controller
         $fileName = 'laporan-penjualan-' . Str::slug($reportTitle) . '.pdf';
 
         $pdf = Pdf::loadView(
-            'accounting.laporan.penjualan._print', 
+            'accounting.laporan.penjualan._print',
             compact('sales', 'reportTitle', 'summary', 'settings')
         )->setPaper('a4', 'portrait');
 
@@ -193,6 +237,127 @@ class AccountingController extends Controller
         ];
 
         return [$query, $reportTitle, $filters];
+    }
+
+    public function payrollIndex(Request $request)
+    {
+        $bulan = $request->input('bulan', date('m'));
+        $tahun = $request->input('tahun', date('Y'));
+
+        $karyawans = Karyawan::with(['payroll' => function ($query) use ($bulan, $tahun) {
+            $query->where('bulan', $bulan)->where('tahun', $tahun);
+        }])
+            ->orderBy('nama', 'asc')
+            ->get();
+
+        return view('admin.payrolls.index', compact('karyawans', 'bulan', 'tahun'));
+    }
+
+    public function payrollStore(Request $request)
+    {
+        $validated = $request->validate([
+            'id'                 => 'nullable|exists:payroll,id',
+            'karyawan_id'        => 'required|exists:karyawans,id',
+            'bulan'              => 'required|integer|min:1|max:12',
+            'tahun'              => 'required|integer|min:2000',
+            'jumlah_absensi'     => 'required|integer|min:0',
+            'nominal_gaji'       => 'required|numeric|min:0',
+
+            'status_pembayaran'  => 'required|in:pending,dibayar',
+            'tanggal_pembayaran' => 'nullable|required_if:status_pembayaran,dibayar|date',
+            'file_bukti'         => 'nullable|required_if:status_pembayaran,dibayar|file|mimes:jpg,jpeg,png,pdf|max:2048',
+        ]);
+
+        unset($validated['id']);
+
+        try {
+            $payroll = null; // Inisialisasi
+            $message = '';
+
+            if ($request->hasFile('file_bukti')) {
+                $path                    = $request->file('file_bukti')->store('public/bukti_pembayaran');
+                $validated['file_bukti'] = $path;
+            }
+
+            // Logika Create (INSERT)
+            if (! $request->filled('id')) {
+                $request->validate([
+                    'karyawan_id' => Rule::unique('payroll')->where(function ($query) use ($request) {
+                        return $query->where('bulan', $request->bulan)
+                            ->where('tahun', $request->tahun);
+                    }),
+                ], ['karyawan_id.unique' => 'Gaji karyawan ini di periode ini sudah ada.']);
+
+                $payroll = Payroll::create($validated);
+                $message = 'Data gaji berhasil diinput.';
+            }
+            // Logika Update (UPDATE)
+            else {
+                // GUNAKAN findOrFail UNTUK MENCEGAH NULL
+                $payroll = Payroll::findOrFail($request->id);
+
+                if ($validated['status_pembayaran'] == 'pending') {
+                    if ($payroll->file_bukti) { // <-- Aman karena $payroll tidak null
+                        Storage::delete($payroll->file_bukti);
+                    }
+                    $validated['file_bukti']         = null;
+                    $validated['tanggal_pembayaran'] = null;
+                } else {
+                    if ($request->hasFile('file_bukti') && $payroll->file_bukti) { // <-- Aman
+                        Storage::delete($payroll->file_bukti);
+                    }
+                    if (! $request->hasFile('file_bukti') && $validated['status_pembayaran'] == 'dibayar') {
+                        $validated['file_bukti'] = $payroll->file_bukti; // <-- Aman
+                    }
+                }
+
+                $payroll->update($validated);
+                $message = 'Data gaji berhasil diperbarui.';
+            }
+
+            return response()->json(['status' => 'success', 'message' => $message]);
+
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function payrollDestroy($id)
+    {
+        try {
+            $payroll = Payroll::findOrFail($id);
+
+            if ($payroll->file_bukti) { // <-- Aman karena $payroll tidak null
+                Storage::delete($payroll->file_bukti);
+            }
+
+            $payroll->delete();
+
+            return response()->json(['status' => 'success', 'message' => 'Data gaji berhasil dihapus.']);
+
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function downloadBukti($id)
+    {
+        try {
+            $payroll = Payroll::findOrFail($id);
+
+            if (! $payroll->file_bukti) {
+                abort(404, 'File bukti tidak ditemukan di database.');
+            }
+
+            if (! Storage::exists($payroll->file_bukti)) {
+                abort(404, 'File bukti tidak ada di storage.');
+            }
+
+            return Storage::download($payroll->file_bukti);
+
+        } catch (\Exception $e) {
+            abort(404, 'File tidak dapat diakses.');
+        }
     }
 
 }
