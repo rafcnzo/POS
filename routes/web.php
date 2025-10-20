@@ -63,6 +63,10 @@ Route::middleware(['auth'])->prefix('acc')->name('acc.')->group(function () {
         Route::get('/laporan-penjualan', [AccountingController::class, 'salesReport'])->name('laporan-penjualan');
         Route::get('/laporan-penjualan/cetak', [AccountingController::class, 'salesReportPdf'])->name('laporan-penjualan.export.pdf');
         Route::get('/laporan-penjualan/export', [AccountingController::class, 'salesReportXls'])->name('laporan-penjualan.export.excel');
+
+        // Routes Laporan Stok
+        Route::get('/laporan/stok-mutasi', [AccountingController::class, 'stockMovementReport'])->name('laporan-stok-mutasi');
+        Route::get('/laporan/stok-mutasi/export/{type}', [AccountingController::class, 'stockMovementExport'])->name('laporan-stok-mutasi.export');
     });
 });
 
@@ -117,6 +121,21 @@ Route::middleware(['auth'])->prefix('kitchen')->name('kitchen.')->group(function
         Route::put('modifiers/{modifier}', [KitchenController::class, 'updateModifier'])->name('modifiers.update');
         Route::delete('modifiers/{modifier}', [KitchenController::class, 'destroyModifier'])->name('modifiers.destroy');
 
+        // Routes FFNE
+        Route::get('/ffne', [KitchenController::class, 'indexFFNE'])->name('ffne.index');
+        Route::post('/ffne/submit', [KitchenController::class, 'submitFFNE'])->name('ffne.submit');
+        Route::delete('/ffne/{ffne}', [KitchenController::class, 'destroyFFNE'])->name('ffne.destroy');
+        Route::get('/ffne/{ffne}/edit', [KitchenController::class, 'editFFNE'])->name('ffne.edit');
+
+        // Routes Extra
+        Route::get('/ffne/{ffne}/extras', [KitchenController::class, 'listExtra'])->name('ffne.extras.list');
+        Route::post('/ffne/extras/submit', [KitchenController::class, 'submitExtra'])->name('ffne.extras.submit');
+        Route::get('/ffne/extras/{extra}/edit', [KitchenController::class, 'editExtra'])->name('ffne.extras.edit');
+        Route::delete('/ffne/extras/{extra}', [KitchenController::class, 'destroyExtra'])->name('ffne.extras.destroy');
+
+        // Route Laporan
+        Route::get('/laporan/bahanbaku', [KitchenController::class,'laporaBahanbaku'])->name('laporan.bahanbaku.vvip');
+        Route::get('/laporan/bahanbaku', [KitchenController::class,'laporanFfneIndex'])->name('laporan.bahanbaku.vvip');
     });
 });
 

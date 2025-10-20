@@ -166,6 +166,7 @@
         </div>
     </div>
 
+    <!-- Modal Detail Penerimaan -->
     <div class="modal fade" id="modalDetailPenerimaan" tabindex="-1" aria-labelledby="modalDetailPenerimaanLabel"
         aria-hidden="true" style="--bs-modal-width: 800px;">
         <div class="modal-dialog modal-lg modal-dialog-scrollable" style="max-width: 800px; margin: 0 auto;">
@@ -184,9 +185,6 @@
                     <div id="penerimaanDetailContent" class="d-none"></div>
                 </div>
                 <div class="modal-footer justify-content-end" style="flex-shrink:0;">
-                    {{-- <a id="btnPrintPenerimaan" href="#" class="btn btn-outline-secondary d-none" target="_blank">
-                        <i class="bi bi-printer"></i> Print Penerimaan
-                    </a> --}}
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tutup</button>
                 </div>
             </div>
@@ -197,7 +195,7 @@
 @push('script')
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Search functionality
+            // ... (Kode untuk search dan hapus tetap sama) ...
             const searchInput = document.getElementById('searchInput');
             if (searchInput) {
                 searchInput.addEventListener('keyup', function() {
@@ -211,7 +209,6 @@
                 });
             }
 
-            // Tombol Hapus Penerimaan
             document.getElementById('tabel-penerimaanbarang').addEventListener('click', function(e) {
                 if (e.target.closest('.btnHapusPenerimaan')) {
                     let btn = e.target.closest('.btnHapusPenerimaan');
@@ -269,7 +266,7 @@
                 }
             });
 
-            // Modal Tambah Penerimaan: Dynamic Items
+            // ... (Kode untuk modal tambah tetap sama) ...
             const poSelect = document.getElementById('purchase_order_id');
             const itemsContainer = document.getElementById('itemsContainer');
             poSelect && poSelect.addEventListener('change', function() {
@@ -292,28 +289,54 @@
                             .length > 0) {
                             let html = '<table class="table table-sm table-bordered">';
                             html +=
-                                '<thead><tr><th>Nama Barang</th><th>Qty Dipesan</th><th>Qty Diterima</th><th>Harga Satuan</th></tr></thead><tbody>';
+                                '<thead><tr><th>Nama Barang</th><th>Qty Dipesan</th><th>Qty Diterima</th><th>Quantity Ditolak</th><th>Catatan</th><th>Harga Satuan</th></tr></thead><tbody>';
                             data.items.forEach((item, idx) => {
                                 html += `<tr>
-                                <td>
-                                    <input type="hidden" name="items[${idx}][ingredient_id]" value="${item.ingredient_id}">
-                                    ${item.ingredient_name}
+                                    <td>
+                                        ${item.name || 'N/A'}
+                                        <input type="hidden" name="items[${idx}][purchase_order_item_id]" value="${item.purchase_order_item_id}">
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center gap-1">
+                                            <input type="number" min="0.01" step="0.01" class="form-control" value="${item.quantity_ordered}" readonly disabled style="width: 90px;">
+                                            <span>${item.unit ? item.unit : ''}</span>
+                                        </div>
+                                        <input type="hidden" name="items[${idx}][quantity_ordered]" value="${item.quantity_ordered}">
+                                    </td>
+                                    <td>
+                                    <input type="number"
+                                        min="0"
+                                        step="0.01"
+                                        class="form-control form-control-sm qty-received"
+                                        name="items[${idx}][quantity_received]"
+                                        data-idx="${idx}"
+                                        data-max="${item.quantity_ordered || 0}"
+                                        placeholder="0"
+                                        required
+                                        style="width: 100px;">
                                 </td>
                                 <td>
-                                    <div class="d-flex align-items-center gap-1">
-                                        <input type="number" min="0.01" step="0.01" class="form-control" value="${item.quantity_ordered}" readonly disabled style="width: 90px;">
-                                        <span>${item.unit ? item.unit : ''}</span>
-                                    </div>
-                                    <input type="hidden" name="items[${idx}][quantity_ordered]" value="${item.quantity_ordered}">
+                                    <input type="number"
+                                        min="0"
+                                        step="0.01"
+                                        class="form-control form-control-sm qty-rejected"
+                                        name="items[${idx}][quantity_rejected]"
+                                        data-idx="${idx}"
+                                        value="0"
+                                        placeholder="0"
+                                        style="width: 100px;">
                                 </td>
                                 <td>
-                                    <input type="number" min="0.01" step="0.01" class="form-control" name="items[${idx}][quantity_received]" required>
+                                    <input type="text"
+                                        class="form-control form-control-sm"
+                                        name="items[${idx}][notes]"
+                                        placeholder="Catatan (opsional)"
+                                        style="min-width: 200px;">
                                 </td>
-                                <td>
-                                    <input type="number" min="0" step="1" class="form-control" value="${item.cost_price}" readonly disabled>
-                                    <input type="hidden" name="items[${idx}][cost_price]" value="${item.cost_price}">
+                                <td class="text-end">
+                                    <strong>${item.cost_price ? new Intl.NumberFormat('id-ID', {style: 'currency', currency: 'IDR'}).format(item.cost_price) : '-'}</strong>
                                 </td>
-                            </tr>`;
+                                </tr>`;
                             });
                             html += '</tbody></table>';
                             itemsContainer.innerHTML = html;
@@ -332,7 +355,6 @@
                     });
             });
 
-            // Submit Tambah Penerimaan
             document.getElementById('formTambahPenerimaan').addEventListener('submit', function(e) {
                 e.preventDefault();
                 const form = this;
@@ -361,21 +383,8 @@
                             })
                             .then(async response => {
                                 hideLoading();
-
-                                console.log("===== MEMERIKSA RESPONSE DARI SERVER =====");
-                                console.log("Objek response mentah:", response);
-                                console.log("Apakah response.ok?", response
-                                .ok); // <--- INI PENTING (Harusnya true)
-
                                 const data = await response.json();
-                                console.log("Data JSON yang sudah di-parse:", data);
-                                console.log("Apakah data.status === 'success'?", data
-                                    .status === 'success'); // <--- INI KUNCINYA
-
                                 if (response.ok && data.status === 'success') {
-                                    console.log(
-                                        "Kesimpulan: KONDISI SUKSES TERPENUHI. Menampilkan notif berhasil."
-                                        );
                                     const modal = document.getElementById('modalTambahPenerimaan');
                                     if (modal) {
                                         const modalInstance = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
@@ -387,9 +396,6 @@
                                         icon: 'success'
                                     }).then(() => location.reload());
                                 } else {
-                                    console.error(
-                                        "Kesimpulan: KONDISI SUKSES GAGAL. Menampilkan notif gagal."
-                                        );
                                     Swal.fire({
                                         title: 'Gagal',
                                         text: data.message || 'Terjadi kesalahan.',
@@ -399,8 +405,6 @@
                             })
                             .catch(error => {
                                 hideLoading();
-                                console.error("===== TERJADI ERROR DI BLOK .CATCH() =====");
-                                console.error("Objek error:", error);
                                 Swal.fire({
                                     title: 'Error Fatal',
                                     text: 'Tidak bisa memproses request. Cek console.',
@@ -411,40 +415,23 @@
                 });
             });
 
+            // === BAGIAN YANG DIPERBARUI ===
             document.addEventListener('click', function(e) {
                 if (e.target.closest('.btnModalDetailPenerimaan')) {
                     const btn = e.target.closest('.btnModalDetailPenerimaan');
                     const id = btn.getAttribute('data-id');
                     const penerimaanDetailContent = document.getElementById('penerimaanDetailContent');
                     const penerimaanDetailLoading = document.getElementById('penerimaanDetailLoading');
-                    // const btnPrintPenerimaan = document.getElementById('btnPrintPenerimaan');
 
-                    // Reset
                     penerimaanDetailContent.innerHTML = '';
                     penerimaanDetailContent.classList.add('d-none');
                     penerimaanDetailLoading.classList.remove('d-none');
 
-                    // // Hide "Print Penerimaan" button initially
-                    // if (btnPrintPenerimaan) {
-                    //     btnPrintPenerimaan.classList.add('d-none');
-                    //     btnPrintPenerimaan.setAttribute('href', '#');
-                    // }
-
-                    // Hapus preview dokumen gambar jika ada sebelumnya
-                    let oldPreview = document.getElementById('proofDocumentPreview');
-                    if (oldPreview) {
-                        oldPreview.parentNode.removeChild(oldPreview);
-                    }
-
                     const modalDetailPenerimaan = document.getElementById('modalDetailPenerimaan');
-                    if (modalDetailPenerimaan) {
-                        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                            const bsModal = bootstrap.Modal.getOrCreateInstance(modalDetailPenerimaan);
-                            bsModal.show();
-                        } else {
-                            modalDetailPenerimaan.style.display = 'block'; // Fallback minimal
-                        }
-                    }
+                     if (modalDetailPenerimaan) {
+                        const bsModal = bootstrap.Modal.getOrCreateInstance(modalDetailPenerimaan);
+                        bsModal.show();
+                     }
 
                     fetch("{{ url('prc/penerimaanbarang') }}/" + id, {
                             headers: {
@@ -457,31 +444,48 @@
                             penerimaanDetailLoading.classList.add('d-none');
                             if (data.status === 'success' && data.penerimaan) {
                                 const p = data.penerimaan;
-                                // proofPreviewHtml will be constructed if ada dokumen
-                                let proofPreviewHtml = '';
 
-                                // Logic for displaying proof document (as img or fallback) like in header photo usage
-                                if (p.proof_document) {
-                                    let proofUrl = '';
-                                    if (/^(https?:)?\/\//.test(p.proof_document) || p.proof_document
-                                        .startsWith('/')) {
-                                        proofUrl = p.proof_document;
-                                    } else {
-                                        proofUrl = "{{ asset('storage') }}/" + p.proof_document;
-                                    }
-                                    proofPreviewHtml = `
+                                let proofPreviewHtml = p.proof_document ? `
                                     <span>
                                         <a href="#" class="btn btn-link btn-sm px-0" id="lihatDokumenLink">
                                             <i class="bi bi-eye"></i> Lihat Dokumen
                                         </a>
                                     </span>
                                     <div id="proofDocumentPreview" style="display:none;margin-top:1rem;">
-                                        <img src="${proofUrl}" alt="Bukti Dokumen" style="max-width:100%;border:1px solid #ddd;padding:4px;">
-                                    </div>
-                                `;
-                                } else {
-                                    // Fallback like in header: if null, show default image (for proof: maybe just "-")
-                                    proofPreviewHtml = '-';
+                                        <img src="{{ asset('storage') }}/${p.proof_document.replace('public/', '')}" alt="Bukti Dokumen" style="max-width:100%;border:1px solid #ddd;padding:4px;">
+                                    </div>` : '-';
+
+                                // PERBAIKAN: Mengambil data dari data.detail_items
+                                let itemsHtml = '<p>Tidak ada item dalam penerimaan ini.</p>';
+                                if (data.detail_items && data.detail_items.length > 0) {
+                                    itemsHtml = `
+                                        <h6 class="mt-4">Rincian Barang Diterima</h6>
+                                        <table class="table table-sm table-bordered">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>#</th>
+                                                    <th>Nama Barang</th>
+                                                    <th class="text-end">Qty Diterima</th>
+                                                    <th class="text-end">Qty Ditolak</th>
+                                                    <th>Catatan</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                    `;
+                                    data.detail_items.forEach((item, index) => {
+                                        // PERBAIKAN: Mengakses nama dari relasi yang benar
+                                        const itemName = item.ingredient ? item.ingredient.name : 'Nama Barang Tidak Ditemukan';
+                                        itemsHtml += `
+                                            <tr>
+                                                <td>${index + 1}</td>
+                                                <td>${itemName}</td>
+                                                <td class="text-end">${parseFloat(item.quantity_received) || 0}</td>
+                                                <td class="text-end">${parseFloat(item.quantity_rejected) || 0}</td>
+                                                <td>${item.notes || '-'}</td>
+                                            </tr>
+                                        `;
+                                    });
+                                    itemsHtml += '</tbody></table>';
                                 }
                                 let html = `
                                 <div class="mb-3">
@@ -495,65 +499,40 @@
                                         <dt class="col-sm-4">User Penerima</dt>
                                         <dd class="col-sm-8">${p.user?.name || '-'}</dd>
                                         <dt class="col-sm-4">Berkas Bukti</dt>
-                                        <dd class="col-sm-8">
-                                            ${proofPreviewHtml}
-                                        </dd>
+                                        <dd class="col-sm-8">${proofPreviewHtml}</dd>
                                     </dl>
                                 </div>
-                            `;
+                                ${itemsHtml}
+                                `;
+
                                 penerimaanDetailContent.innerHTML = html;
 
-                                // listener utk lihat dokumen
                                 if (p.proof_document) {
                                     const lihatLink = document.getElementById('lihatDokumenLink');
                                     const previewDiv = document.getElementById('proofDocumentPreview');
                                     if (lihatLink && previewDiv) {
                                         lihatLink.addEventListener('click', function(ev) {
                                             ev.preventDefault();
-                                            if (previewDiv.style.display === 'none' ||
-                                                previewDiv.style.display === '') {
-                                                previewDiv.style.display = 'block';
-                                                lihatLink.innerHTML =
-                                                    `<i class="bi bi-eye-slash"></i> Tutup Dokumen`;
-                                            } else {
-                                                previewDiv.style.display = 'none';
-                                                lihatLink.innerHTML =
-                                                    `<i class="bi bi-eye"></i> Lihat Dokumen`;
-                                            }
+                                            const isHidden = previewDiv.style.display === 'none' || previewDiv.style.display === '';
+                                            previewDiv.style.display = isHidden ? 'block' : 'none';
+                                            lihatLink.innerHTML = isHidden ? `<i class="bi bi-eye-slash"></i> Tutup Dokumen` : `<i class="bi bi-eye"></i> Lihat Dokumen`;
                                         });
                                     }
                                 }
 
-                                // // Set the href of Print Penerimaan button and show it
-                                // if (btnPrintPenerimaan && p.id) {
-                                //     btnPrintPenerimaan.setAttribute('href', '#');
-                                //     // btnPrintPenerimaan.setAttribute('href', '{{ url('prc/penerimaanbarang/print/0') }}'.replace(/0$/, p.id)); // update print href jika ada route
-                                //     btnPrintPenerimaan.classList.remove('d-none');
-                                // }
                             } else {
-                                penerimaanDetailContent.innerHTML =
-                                    `<div class="text-danger">Gagal memuat detail penerimaan. Silakan coba lagi.</div>`;
-                                // Hide the "Print Penerimaan" button again if error
-                                if (btnPrintPenerimaan) {
-                                    btnPrintPenerimaan.classList.add('d-none');
-                                    btnPrintPenerimaan.setAttribute('href', '#');
-                                }
+                                penerimaanDetailContent.innerHTML = `<div class="text-danger">Gagal memuat detail penerimaan. Silakan coba lagi.</div>`;
                             }
                             penerimaanDetailContent.classList.remove('d-none');
                         })
                         .catch(() => {
                             penerimaanDetailLoading.classList.add('d-none');
-                            penerimaanDetailContent.innerHTML =
-                                `<div class="text-danger">Gagal memuat detail penerimaan. Silakan coba lagi.</div>`;
+                            penerimaanDetailContent.innerHTML = `<div class="text-danger">Gagal memuat detail penerimaan. Silakan coba lagi.</div>`;
                             penerimaanDetailContent.classList.remove('d-none');
-                            // Hide the "Print Penerimaan" button on fetch error
-                            if (btnPrintPenerimaan) {
-                                btnPrintPenerimaan.classList.add('d-none');
-                                btnPrintPenerimaan.setAttribute('href', '#');
-                            }
                         });
                 }
             });
+
         });
     </script>
 @endpush

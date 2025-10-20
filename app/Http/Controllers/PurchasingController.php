@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\StoreRequest;
 use App\Models\Supplier;
 use App\Models\GoodsReceipt;
@@ -235,17 +236,18 @@ class PurchasingController extends Controller
             'receipt_date'              => 'required|date',
             'proof_document'            => 'required|file|mimes:jpg,jpeg,png,pdf|max:2048',
             'items'                     => 'required|array|min:1',
-            'items.*.ingredient_id'     => 'required|exists:ingredients,id',
+            'items.*.purchase_order_item_id' => 'required|exists:purchase_order_items,id',
             'items.*.quantity_received' => 'required|numeric|min:0.01',
+            'items.*.quantity_rejected' => 'nullable|numeric|min:0',
+            'items.*.notes'             => 'nullable|string|max:500',
         ]);
 
         $updatedStocks = [];
 
         try {
             DB::transaction(function () use ($request, $validated, &$updatedStocks) {
+                // Generate receipt number
                 $date = now()->format('Ymd');
-
-                // Cari angka urut terakhir untuk receipt_number hari ini
                 $lastReceipt = GoodsReceipt::whereDate('created_at', now()->toDateString())
                     ->orderByDesc('id')
                     ->first();
@@ -255,14 +257,16 @@ class PurchasingController extends Controller
                 } else {
                     $urut = 1;
                 }
+
                 $receipt_number = 'GR-' . $date . '-' . str_pad($urut, 3, '0', STR_PAD_LEFT);
 
+                // Upload proof document
                 $proofPath = null;
                 if ($request->hasFile('proof_document')) {
                     $proofPath = $request->file('proof_document')->store('proofs', 'public');
                 }
 
-                // Buat only header, tanpa detail item
+                // Create goods receipt header
                 $goodsReceipt = GoodsReceipt::create([
                     'receipt_number'    => $receipt_number,
                     'purchase_order_id' => $validated['purchase_order_id'],
@@ -271,38 +275,56 @@ class PurchasingController extends Controller
                     'proof_document'    => $proofPath,
                 ]);
 
-                // Update status purchase order menjadi 'diterima'
-                $purchaseOrder = PurchaseOrder::find($validated['purchase_order_id']);
-                if ($purchaseOrder) {
-                    $purchaseOrder->status = 'diterima';
-                    $purchaseOrder->save();
-                }
-
-                // Update stock ingredients dan catat update-nya
+                // Create goods receipt items & update stock
                 foreach ($validated['items'] as $itemData) {
-                    $ingredient = Ingredient::find($itemData['ingredient_id']);
-                    if ($ingredient) {
+                    // Create item record
+                    $receiptItem = GoodsReceiptItem::create([
+                        'goods_receipt_id'       => $goodsReceipt->id,
+                        'purchase_order_item_id' => $itemData['purchase_order_item_id'],
+                        'quantity_received'      => $itemData['quantity_received'],
+                        'quantity_rejected'      => $itemData['quantity_rejected'] ?? 0,
+                        'notes'                  => $itemData['notes'] ?? null,
+                    ]);
+
+                    // Update stock ingredient
+                    $poItem = PurchaseOrderItem::with('ingredient')->find($itemData['purchase_order_item_id']);
+
+                    if ($poItem && $poItem->ingredient) {
+                        $ingredient = $poItem->ingredient;
                         $oldStock = $ingredient->stock;
+
                         $ingredient->increment('stock', $itemData['quantity_received']);
                         $newStock = $ingredient->fresh()->stock;
+
                         $updatedStocks[] = [
                             'ingredient_id'   => $ingredient->id,
                             'ingredient_name' => $ingredient->name,
-                            'qty_increased'   => $itemData['quantity_received'],
+                            'qty_received'    => $itemData['quantity_received'],
+                            'qty_rejected'    => $itemData['quantity_rejected'] ?? 0,
                             'stock_before'    => $oldStock,
                             'stock_after'     => $newStock,
                         ];
                     }
                 }
+
+                // Update PO status
+                $purchaseOrder = PurchaseOrder::find($validated['purchase_order_id']);
+                if ($purchaseOrder) {
+                    $purchaseOrder->update(['status' => 'diterima']);
+                }
             });
         } catch (\Exception $e) {
-            return response()->json(['status' => 'error', 'message' => 'Gagal menyimpan: ' . $e->getMessage()], 500);
+            \Log::error('Error penerimaan barang: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal menyimpan: ' . $e->getMessage()
+            ], 500);
         }
 
         return response()->json([
-            'status' => 'success',
-            'message' => 'Penerimaan barang berhasil dicatat dan stok telah diperbarui.',
-            'updated_stocks' => $updatedStocks, // Berisi list ingredient yang stoknya diperbarui beserta qty
+            'status'         => 'success',
+            'message'        => 'Penerimaan barang berhasil dicatat dan stok telah diperbarui.',
+            'updated_stocks' => $updatedStocks,
         ]);
     }
 
@@ -326,7 +348,9 @@ class PurchasingController extends Controller
     public function penerimaanbarangShow($id)
     {
         $penerimaan = GoodsReceipt::with(['purchaseOrder', 'user'])->find($id);
-
+        $detailItems = GoodsReceiptItem::with(['purchaseOrderItem.ingredient'])
+            ->where('goods_receipt_id', $id)
+            ->get();
         if (!$penerimaan) {
             return response()->json([
                 'status' => 'error',
@@ -349,7 +373,20 @@ class PurchasingController extends Controller
                     'po_number' => $penerimaan->purchaseOrder->po_number,
                 ] : null,
                 'proof_document' => $penerimaan->proof_document,
-            ]
+                ],
+            'detail_items' => $detailItems->map(function($item) {
+                return [
+                    'id' => $item->id,
+                    'purchase_order_item_id' => $item->purchase_order_item_id,
+                    'ingredient' => $item->purchaseOrderItem && $item->purchaseOrderItem->ingredient ? [
+                        'id' => $item->purchaseOrderItem->ingredient->id,
+                        'name' => $item->purchaseOrderItem->ingredient->name,
+                    ] : null,
+                    'quantity_received' => $item->quantity_received,
+                    'quantity_rejected' => $item->quantity_rejected,
+                    'notes' => $item->notes,
+                ];
+            })->all(),
         ]);
     }
 

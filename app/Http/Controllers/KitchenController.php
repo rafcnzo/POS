@@ -1,7 +1,9 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\EnergyCost;
+use App\Models\Extra;
 use App\Models\Ingredient;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
@@ -13,6 +15,7 @@ use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Models\Ffne;
 
 class KitchenController extends Controller
 {
@@ -123,7 +126,7 @@ class KitchenController extends Controller
             'description'      => $validated['description'] ?? null,
         ];
 
-        if (! $request->id) {
+        if (!$request->id) {
             $category     = MenuCategory::find($validated['category_id']);
             $categoryName = strtolower($category->name);
             if (strpos($categoryName, 'makanan') !== false) {
@@ -386,5 +389,111 @@ class KitchenController extends Controller
             'status'  => 'success',
             'message' => 'Pilihan berhasil dihapus.',
         ]);
+    }
+
+    public function indexFFNE()
+    {
+        $ffnes = Ffne::with('extras')->orderBy('id', 'desc')->get();
+        return view('kitchen.ffne.index', compact('ffnes'));
+    }
+
+    public function submitFFNE(Request $request)
+    {
+        // ✅ Hapus 'kode_ffne' dari validasi
+        $validated = $request->validate([
+            'nama_ffne'     => 'required|string|max:255',
+            'kategori_ffne' => ['required', Rule::in(['Barang Habis Pakai', 'Barang Tidak Habis Pakai'])],
+            'harga'         => 'required|numeric|min:0',
+            'satuan_ffne'   => 'required|string|max:100',
+            'kondisi_ffne'  => 'nullable|boolean',
+        ]);
+
+        // Checkbox logic: dicentang = true, tidak dicentang = false
+        $validated['kondisi_ffne'] = $request->has('kondisi_ffne');
+
+        $ffneData = $validated;
+
+        // ✅ Logika pembuatan kode otomatis HANYA untuk data baru
+        if (!$request->id) {
+            $prefix = ($validated['kategori_ffne'] === 'Barang Tidak Habis Pakai') ? 'F-' : 'E-';
+
+            // Cari kode terakhir dengan prefix yang sama
+            $lastFfne = Ffne::where('kode_ffne', 'like', $prefix . '%')->orderBy('kode_ffne', 'desc')->first();
+
+            $nextNumber = 1;
+            if ($lastFfne) {
+                // Ambil angka dari kode terakhir dan tambahkan 1
+                $lastNumber = (int) substr($lastFfne->kode_ffne, strlen($prefix));
+                $nextNumber = $lastNumber + 1;
+            }
+
+            // Gabungkan prefix dengan angka yang sudah diformat (misal: 001)
+            $ffneData['kode_ffne'] = $prefix . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+        } else {
+             // Untuk proses update, pastikan validasi unique nama tidak bentrok dengan data itu sendiri
+             $request->validate([
+                'nama_ffne' => Rule::unique('ffnes')->ignore($request->id),
+             ]);
+        }
+
+
+        Ffne::updateOrCreate(['id' => $request->id], $ffneData);
+
+        $message = $request->id
+            ? 'Data FF&E berhasil diperbarui.'
+            : 'Data FF&E baru berhasil ditambahkan.';
+
+        return response()->json(['status' => 'success', 'message' => $message]);
+    }
+
+
+    public function destroyFFNE(Ffne $ffne)
+    {
+        $ffne->extras()->delete();
+        $ffne->delete();
+
+        return response()->json(['status' => 'success', 'message' => 'Data FF&E berhasil dihapus.']);
+    }
+
+    public function editFFNE(Ffne $ffne)
+    {
+        return response()->json($ffne->load('extras'));
+    }
+
+    public function listExtra(Ffne $ffne)
+    {
+        $extras = $ffne->extras()->orderBy('tanggal', 'desc')->get();
+        return response()->json($extras);
+    }
+
+    public function submitExtra(Request $request)
+    {
+        $validated = $request->validate([
+            'id'         => 'nullable|exists:extras,id',
+            'ffne_id'    => 'required|exists:ffnes,id',
+            'nama'       => 'required|string|max:255',
+            'harga'      => 'required|numeric|min:0',
+            'tanggal'    => 'required|date',
+            'keterangan' => 'nullable|string|max:500',
+        ]);
+
+        Extra::updateOrCreate(['id' => $request->id], $validated);
+
+        $message = $request->id
+            ? 'Data perbaikan berhasil diperbarui.'
+            : 'Perbaikan baru berhasil ditambahkan.';
+
+        return response()->json(['status' => 'success', 'message' => $message]);
+    }
+
+    public function destroyExtra(Extra $extra)
+    {
+        $extra->delete();
+        return response()->json(['status' => 'success', 'message' => 'Data Extra berhasil dihapus.']);
+    }
+
+    public function editExtra(Extra $extra)
+    {
+        return response()->json($extra);
     }
 }

@@ -1,7 +1,11 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Exports\SalesReportExport;
+use App\Exports\StockMovementExport;
+use App\Models\Ffne;
+use App\Models\Ingredient;
 use App\Models\Karyawan;
 use App\Models\Payroll;
 use App\Models\Sale;
@@ -10,6 +14,7 @@ use App\Models\Supplier;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -37,7 +42,7 @@ class AccountingController extends Controller
                 Rule::in([Supplier::TYPE_TEMPO, Supplier::TYPE_PETTY_CASH]),
             ],
             'jatuh_tempo1'   => 'nullable|required_if:type,' . Supplier::TYPE_TEMPO . '|date', // Wajib jika Tempo
-            'jatuh_tempo2'   => 'nullable|date|after_or_equal:jatuh_tempo1',                   // Opsional, harus setelah tempo1 jika diisi
+            'jatuh_tempo2'   => 'nullable|date|after_or_equal:jatuh_tempo1',               // Opsional, harus setelah tempo1 jika diisi
         ], [
             // Pesan error custom
             'credit_limit.required_if'    => 'Limit kredit wajib diisi untuk supplier tipe Tempo.',
@@ -47,8 +52,8 @@ class AccountingController extends Controller
 
         if ($validated['type'] === Supplier::TYPE_PETTY_CASH) {
             $validated['credit_limit'] = 0;
-            $validated['jatuh_tempo1'] = null; 
-            $validated['jatuh_tempo2'] = null; 
+            $validated['jatuh_tempo1'] = null;
+            $validated['jatuh_tempo2'] = null;
         } else {
             $validated['credit_limit'] = $validated['credit_limit'] ?? 0;
         }
@@ -69,7 +74,6 @@ class AccountingController extends Controller
                 'message' => $message,
                 'data'    => $supplier,
             ]);
-
         } catch (\Exception $e) {
             \Log::error("Error saving supplier: " . $e->getMessage());
             return response()->json([
@@ -238,7 +242,192 @@ class AccountingController extends Controller
 
         return [$query, $reportTitle, $filters];
     }
+    // Tambahkan method baru ini di AccountingController.php
+    // Hapus method stockInReport, stockOutReport, stockInReportExport, stockOutReportExport yang lama
 
+    public function stockMovementReport(Request $request)
+    {
+        [$query, $filters, $reportTitle] = $this->buildStockMovementQuery($request);
+
+        $movements = $query->paginate(25)->withQueryString();
+
+        // Gabungkan ingredients dan ffnes untuk dropdown
+        $allItems = collect();
+
+        $ingredients = Ingredient::orderBy('name')->get()->map(function($item) {
+            return [
+                'id' => $item->id,
+                'name' => $item->name,
+                'type' => 'ingredient',
+                'display_name' => $item->name . ' (Bahan Baku)'
+            ];
+        });
+
+        $ffnes = Ffne::orderBy('nama_ffne')->get()->map(function($item) {
+            return [
+                'id' => $item->id,
+                'name' => $item->nama_ffne,
+                'type' => 'ffne',
+                'display_name' => $item->nama_ffne . ' (FFNE)'
+            ];
+        });
+
+        $allItems = $ingredients->concat($ffnes)->sortBy('name');
+
+        return view('accounting.laporan.stok.mutasi', [
+            'movements'   => $movements,
+            'filters'     => $filters,
+            'reportTitle' => $reportTitle,
+            'allItems'    => $allItems,
+        ]);
+    }
+
+    public function stockMovementExport(Request $request, $type)
+    {
+        if (!in_array($type, ['excel', 'pdf'])) {
+            abort(404);
+        }
+
+        [$query, $filters, $reportTitle] = $this->buildStockMovementQuery($request);
+        $movements = $query->get();
+        $settings = Setting::pluck('value', 'key')->toArray();
+        $fileName = 'laporan-mutasi-stok-' . Str::slug($reportTitle);
+
+        if ($type === 'excel') {
+            $settings = Setting::pluck('value', 'key')->toArray();
+
+            $storeInfo = [
+                'store_name'    => $settings['store_name'] ?? 'Nama Toko',
+                'store_phone'   => $settings['store_phone'] ?? '-',
+                'store_address' => $settings['store_address'] ?? '-',
+                'store_logo'    => $settings['store_logo'] ?? null,
+                'report_period' => Carbon::parse($filters['start_date'])->format('d M Y')
+                                . ' - ' . Carbon::parse($filters['end_date'])->format('d M Y'),
+            ];
+
+            return Excel::download(
+                new StockMovementExport($movements, $reportTitle, $storeInfo),
+                $fileName . '.xlsx'
+            );
+        }
+
+
+        if ($type === 'pdf') {
+            $pdf = Pdf::loadView(
+                'accounting.laporan.stok._print_mutasi',
+                compact('movements', 'reportTitle', 'settings', 'filters')
+            )->setPaper('a4', 'landscape');
+            return $pdf->download($fileName . '.pdf');
+        }
+    }
+
+    private function buildStockMovementQuery(Request $request)
+    {
+        $request->validate([
+            'start_date'     => 'nullable|date',
+            'end_date'       => 'nullable|date|after_or_equal:start_date',
+            'item_id'        => 'nullable|integer',
+            'item_type'      => 'nullable|string|in:ingredient,ffne',
+            'movement_type'  => 'nullable|string|in:in,out',
+        ]);
+
+        $startDate     = $request->input('start_date', now()->startOfMonth()->toDateString());
+        $endDate       = $request->input('end_date', now()->endOfMonth()->toDateString());
+        $movementType  = $request->input('movement_type');
+        $itemId        = $request->input('item_id');
+        $itemType      = $request->input('item_type');
+
+        // Query Barang Masuk (Ingredient only) - 10 kolom
+        $stockIn = DB::table('goods_receipt_items')
+            ->join('goods_receipts', 'goods_receipts.id', '=', 'goods_receipt_items.goods_receipt_id')
+            ->join('purchase_order_items', 'purchase_order_items.id', '=', 'goods_receipt_items.purchase_order_item_id')
+            ->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_items.purchase_order_id')
+            ->join('suppliers', 'suppliers.id', '=', 'purchase_orders.supplier_id')
+            ->join('ingredients', 'ingredients.id', '=', 'purchase_order_items.ingredient_id')
+            ->select(
+                'goods_receipts.receipt_number as reference',
+                'goods_receipts.created_at as movement_date',
+                'ingredients.id as item_id',
+                DB::raw('"ingredient" as item_type'),
+                'ingredients.name',
+                DB::raw('"in" as movement_direction'),
+                'goods_receipt_items.quantity_received as quantity',
+                DB::raw('"Dikirim Dari " || suppliers.name as description')
+            )
+            ->whereBetween(DB::raw('DATE(goods_receipts.created_at)'), [$startDate, $endDate]);
+
+        // Query Barang Keluar - Penjualan (Ingredient only) - 10 kolom
+        $stockOutSales = DB::table('sale_items')
+            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
+            ->join('ingredient_menu_item', 'ingredient_menu_item.menu_item_id', '=', 'sale_items.menu_item_id')
+            ->join('ingredients', 'ingredients.id', '=', 'ingredient_menu_item.ingredient_id')
+            ->select(
+                'sales.transaction_code as reference',
+                'sales.created_at as movement_date',
+                'ingredients.id as item_id',
+                DB::raw('"ingredient" as item_type'),
+                'ingredients.name',
+                DB::raw('"out" as movement_direction'),
+                DB::raw('sale_items.quantity * ingredient_menu_item.quantity as quantity'),
+                DB::raw('"Pemakaian Penjualan" as description')
+            )
+            ->where('sales.status', 'completed')
+            ->whereBetween(DB::raw('DATE(sales.created_at)'), [$startDate, $endDate]);
+
+        // Query Barang Keluar - Rusak (FFNE only) - 10 kolom
+        $stockOutDamage = DB::table('ffnes')
+            ->select(
+                DB::raw('"FFNE-R-" || ffnes.id as reference'),
+                'ffnes.updated_at as movement_date',
+                'ffnes.id as item_id',
+                DB::raw('"ffne" as item_type'),
+                'ffnes.nama_ffne as name',
+                DB::raw('"out" as movement_direction'),
+                DB::raw('1 as quantity'),
+                DB::raw('"Barang Rusak" as description')
+            )
+            ->where('ffnes.kondisi_ffne', 1)
+            ->whereBetween(DB::raw('DATE(ffnes.updated_at)'), [$startDate, $endDate]);
+
+        // Filter berdasarkan item_id dan item_type
+        if ($itemId && $itemType) {
+            if ($itemType === 'ingredient') {
+                $stockIn->where('ingredients.id', $itemId);
+                $stockOutSales->where('ingredients.id', $itemId);
+                $stockOutDamage->whereRaw('1 = 0');
+            } elseif ($itemType === 'ffne') {
+                $stockIn->whereRaw('1 = 0');
+                $stockOutSales->whereRaw('1 = 0');
+                $stockOutDamage->where('ffnes.id', $itemId);
+            }
+        }
+
+        // Gabungkan query berdasarkan movement_type
+        if ($movementType === 'in') {
+            $query = $stockIn;
+        } elseif ($movementType === 'out') {
+            $query = $stockOutSales->unionAll($stockOutDamage);
+        } else {
+            $query = $stockIn->unionAll($stockOutSales)->unionAll($stockOutDamage);
+        }
+
+        // Wrap final query untuk ordering
+        $query = DB::table(DB::raw("({$query->toSql()}) as movements"))
+            ->mergeBindings($query)
+            ->orderBy('movement_date', 'desc');
+
+        $reportTitle = "Laporan Mutasi Stok " . Carbon::parse($startDate)->format('d M Y') . " - " . Carbon::parse($endDate)->format('d M Y');
+
+        $filters = [
+            'start_date'    => $startDate,
+            'end_date'      => $endDate,
+            'item_id'       => $itemId,
+            'item_type'     => $itemType,
+            'movement_type' => $movementType,
+        ];
+
+        return [$query, $filters, $reportTitle];
+    }
     public function payrollIndex(Request $request)
     {
         $bulan = $request->input('bulan', date('m'));
@@ -256,16 +445,15 @@ class AccountingController extends Controller
     public function payrollStore(Request $request)
     {
         $validated = $request->validate([
-            'id'                 => 'nullable|exists:payroll,id',
-            'karyawan_id'        => 'required|exists:karyawans,id',
-            'bulan'              => 'required|integer|min:1|max:12',
-            'tahun'              => 'required|integer|min:2000',
-            'jumlah_absensi'     => 'required|integer|min:0',
-            'nominal_gaji'       => 'required|numeric|min:0',
-
-            'status_pembayaran'  => 'required|in:pending,dibayar',
-            'tanggal_pembayaran' => 'nullable|required_if:status_pembayaran,dibayar|date',
-            'file_bukti'         => 'nullable|required_if:status_pembayaran,dibayar|file|mimes:jpg,jpeg,png,pdf|max:2048',
+            'id'                   => 'nullable|exists:payroll,id',
+            'karyawan_id'          => 'required|exists:karyawans,id',
+            'bulan'                => 'required|integer|min:1|max:12',
+            'tahun'                => 'required|integer|min:2000',
+            'jumlah_absensi'       => 'required|integer|min:0',
+            'nominal_gaji'         => 'required|numeric|min:0',
+            'status_pembayaran'    => 'required|in:pending,dibayar',
+            'tanggal_pembayaran'   => 'nullable|required_if:status_pembayaran,dibayar|date',
+            'file_bukti'           => 'nullable|required_if:status_pembayaran,dibayar|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
 
         unset($validated['id']);
@@ -280,7 +468,7 @@ class AccountingController extends Controller
             }
 
             // Logika Create (INSERT)
-            if (! $request->filled('id')) {
+            if (!$request->filled('id')) {
                 $request->validate([
                     'karyawan_id' => Rule::unique('payroll')->where(function ($query) use ($request) {
                         return $query->where('bulan', $request->bulan)
@@ -306,7 +494,7 @@ class AccountingController extends Controller
                     if ($request->hasFile('file_bukti') && $payroll->file_bukti) { // <-- Aman
                         Storage::delete($payroll->file_bukti);
                     }
-                    if (! $request->hasFile('file_bukti') && $validated['status_pembayaran'] == 'dibayar') {
+                    if (!$request->hasFile('file_bukti') && $validated['status_pembayaran'] == 'dibayar') {
                         $validated['file_bukti'] = $payroll->file_bukti; // <-- Aman
                     }
                 }
@@ -316,7 +504,6 @@ class AccountingController extends Controller
             }
 
             return response()->json(['status' => 'success', 'message' => $message]);
-
         } catch (\Exception $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
@@ -334,7 +521,6 @@ class AccountingController extends Controller
             $payroll->delete();
 
             return response()->json(['status' => 'success', 'message' => 'Data gaji berhasil dihapus.']);
-
         } catch (\Exception $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
@@ -345,19 +531,17 @@ class AccountingController extends Controller
         try {
             $payroll = Payroll::findOrFail($id);
 
-            if (! $payroll->file_bukti) {
+            if (!$payroll->file_bukti) {
                 abort(404, 'File bukti tidak ditemukan di database.');
             }
 
-            if (! Storage::exists($payroll->file_bukti)) {
+            if (!Storage::exists($payroll->file_bukti)) {
                 abort(404, 'File bukti tidak ada di storage.');
             }
 
             return Storage::download($payroll->file_bukti);
-
         } catch (\Exception $e) {
             abort(404, 'File tidak dapat diakses.');
         }
     }
-
 }
