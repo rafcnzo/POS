@@ -2,14 +2,20 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class StoreRequestItem extends Model
 {
     protected $table = 'store_request_items';
-    protected $fillable = ['store_request_id', 'ingredient_id', 'requested_quantity', 'issued_quantity'];
+    protected $fillable = ['store_request_id', 'itemable_id', 'itemable_type', 'requested_quantity', 'issued_quantity'];
 
-    public function ingredient()
+    public function itemable(): MorphTo
     {
-        return $this->belongsTo(Ingredient::class);
+        return $this->morphTo();
+    }
+
+    public function storeRequest()
+    {
+        return $this->belongsTo(StoreRequest::class);
     }
 }

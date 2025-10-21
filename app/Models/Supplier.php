@@ -29,4 +29,15 @@ class Supplier extends Model
         'jatuh_tempo1' => 'date', // <-- BARU
         'jatuh_tempo2' => 'date', // <-- BARU
     ];
+
+    public function purchaseOrders()
+    {
+        return $this->hasMany(PurchaseOrder::class);
+    }
+
+    // BARU: Relasi ke Pembayaran Supplier
+    public function supplierPayments()
+    {
+        return $this->hasMany(SupplierPayment::class);
+    }
 }

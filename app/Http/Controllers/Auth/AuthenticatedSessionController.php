@@ -39,16 +39,17 @@ class AuthenticatedSessionController extends Controller
         $url  = '';
         $user = Auth::user();
 
+        // Sesuaikan redirect sesuai dengan prefix/route untuk masing-masing role
         if ($user->hasRole('Super Admin')) {
-            $url = '/admin';
+            $url = route('admin.index'); // sesuai dengan route 'admin.index' -> '/admin'
         } elseif ($user->hasRole('Accounting')) {
-            $url = '/accounting';
+            $url = route('acc.suppliers.index'); // sesuai dengan route acc
         } elseif ($user->hasRole('Chef')) {
-            $url = '/chef';
+            $url = route('kitchen.menu.index'); // sesuai dengan route kitchen
         } elseif ($user->hasRole('Cashier')) {
-            $url = '/cashier/pos';
+            $url = route('cashier.index'); // sesuai dengan route cashier
         } else {
-            $url = '';
+            $url = '/';
         }
 
         return redirect()->intended($url);

@@ -615,49 +615,52 @@
                 voidBtn.addEventListener('click', function() {
                     const url = this.dataset.url;
 
-                    Swal.fire({
-                        title: 'Batalkan Transaksi?',
-                        text: "Anda yakin ingin membatalkan transaksi ini? Stok akan dikembalikan ke semula.",
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonColor: '#d33',
-                        cancelButtonColor: '#3085d6',
-                        confirmButtonText: 'Ya, batalkan!',
-                        cancelButtonText: 'Tidak'
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            showLoading('Membatalkan transaksi...');
-                            fetch(url, {
-                                    method: 'POST',
-                                    headers: {
-                                        'X-Requested-With': 'XMLHttpRequest',
-                                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                                        'Accept': 'application/json'
-                                    },
-                                })
-                                .then(response => response.json())
-                                .then(data => {
-                                    hideLoading();
-                                    if (data.status === 'success') {
-                                        Swal.fire({
-                                            title: 'Dibatalkan!',
-                                            text: data.message,
-                                            icon: 'success'
-                                        }).then(() => {
-                                            window.location.href =
-                                                "{{ route('cashier.index') }}";
-                                        });
-                                    } else {
-                                        Swal.fire('Gagal!', data.message ||
-                                            'Gagal membatalkan transaksi.', 'error');
-                                    }
-                                })
-                                .catch(error => {
-                                    hideLoading();
-                                    Swal.fire('Error!', 'Tidak dapat terhubung ke server.',
-                                        'error');
-                                });
-                        }
+                    // Ganti ke withAuth untuk Batalkan Transaksi (dengan password otorisasi)
+                    withAuth(function() {
+                        Swal.fire({
+                            title: 'Batalkan Transaksi?',
+                            text: "Anda yakin ingin membatalkan transaksi ini? Stok akan dikembalikan ke semula.",
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonColor: '#d33',
+                            cancelButtonColor: '#3085d6',
+                            confirmButtonText: 'Ya, batalkan!',
+                            cancelButtonText: 'Tidak'
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                showLoading('Membatalkan transaksi...');
+                                fetch(url, {
+                                        method: 'POST',
+                                        headers: {
+                                            'X-Requested-With': 'XMLHttpRequest',
+                                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                            'Accept': 'application/json'
+                                        },
+                                    })
+                                    .then(response => response.json())
+                                    .then(data => {
+                                        hideLoading();
+                                        if (data.status === 'success') {
+                                            Swal.fire({
+                                                title: 'Dibatalkan!',
+                                                text: data.message,
+                                                icon: 'success'
+                                            }).then(() => {
+                                                window.location.href =
+                                                    "{{ route('cashier.index') }}";
+                                            });
+                                        } else {
+                                            Swal.fire('Gagal!', data.message ||
+                                                'Gagal membatalkan transaksi.', 'error');
+                                        }
+                                    })
+                                    .catch(error => {
+                                        hideLoading();
+                                        Swal.fire('Error!', 'Tidak dapat terhubung ke server.',
+                                            'error');
+                                    });
+                            }
+                        });
                     });
                 });
             }

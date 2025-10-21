@@ -9,7 +9,6 @@ use App\Models\Modifier;
 use App\Models\Reservation;
 use App\Models\Sale;
 use App\Models\Setting;
-use App\Services\Printing;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -703,20 +702,48 @@ class CashierController extends Controller
             'payments',
         ])->findOrFail($id);
 
-        $settings    = Setting::pluck('value', 'key')->toArray();
+        $settings   = Setting::pluck('value', 'key')->toArray();
+        $logoBase64 = null;
+        $logoPath   = $settings['store_logo'] ?? null;
+        if ($logoPath && \Storage::disk('public')->exists($logoPath)) {
+            try {
+                $imageContents = \Storage::disk('public')->get($logoPath);
+                $mimeType      = \Storage::disk('public')->mimeType($logoPath);
+                $logoBase64    = 'data:' . $mimeType . ';base64,' . base64_encode($imageContents);
+            } catch (\Exception $e) {
+                // Biarkan logoBase64 null jika gagal
+            }
+        }
+
         $printerName = $settings['printer_kasir'] ?? null;
 
         try {
-            $html = view('cashier._print_cust', compact('sale', 'settings'))->render();
+            // Kirim logoBase64 ke view
+            $html = view('cashier._print_cust', compact('sale', 'settings', 'logoBase64'))->render();
+            // $html = '<html><body style="margin:20px;"><h1>TEST PRINT</h1><p>Ini adalah test print</p></body></html>';
 
             $isVirtualPrinter = in_array($printerName, ['Nitro PDF Creator', 'Microsoft Print to PDF']);
 
             if ($printerName && ! $isVirtualPrinter) {
-                Printing::printer($printerName)->html($html)->send();
-                return response()->json(['success' => true, 'message' => "Struk dikirim ke printer: {$printerName}"]);
+                $allPrinters = \Native\Laravel\Facades\System::printers();
+                $printerObj = collect($allPrinters)->first(function ($printer) use ($printerName) {
+                    return $printer->name === $printerName;
+                });
 
+                if ($printerObj) {
+                    \Native\Laravel\Facades\System::print($html, $printerObj, [
+                        'silent'            => true,
+                        'printBackground'   => true,
+                        'preferCSSPageSize' => true,
+                    ]);
+                    return response()->json(['success' => true, 'message' => "Struk dikirim ke printer: {$printerName}"]);
+                } else {
+                    // Printer yang diset di settings tidak ditemukan di sistem
+                    return response()->json(['success' => false, 'message' => "Printer '{$printerName}' tidak ditemukan di daftar printer sistem."], 404);
+                }
             } else {
-                return view('cashier._print_cust', compact('sale', 'settings'));
+                // Fallback jika tidak ada printer atau jika itu virtual printer (tampilkan di view)
+                return view('cashier._print_cust', compact('sale', 'settings', 'logoBase64'));
             }
 
         } catch (\Exception $e) {

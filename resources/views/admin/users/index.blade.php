@@ -1,65 +1,98 @@
 @extends('app')
 @section('content')
     <div class="page-content">
-        <div class="row mb-3">
-            <div class="col-12">
-                <div class="card radius-10">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <h4 class="mb-0">Manajemen User</h4>
-                            <button class="btn btn-primary" id="btnTambahUser"><i class="bi bi-plus"></i> Tambah User</button>
+        <div class="container-fluid">
+            <!-- Page Header -->
+            <div class="page-header">
+                <div class="page-header-content">
+                    <div class="page-title-wrapper">
+                        <div class="page-icon">
+                            <i class="bi bi-people"></i>
                         </div>
-                        <div class="table-responsive">
-                            <table class="table table-bordered table-hover align-middle" id="tabel-users">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>#</th>
-                                        <th>Nama</th>
-                                        <th>Email</th>
-                                        <th>Role</th>
-                                        <th>Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach ($users as $i => $user)
-                                        <tr>
-                                            <td>{{ $i + 1 }}</td>
-                                            <td>{{ $user->name }}</td>
-                                            <td>{{ $user->email }}</td>
-                                            <td>
-                                                @foreach ($user->roles as $role)
-                                                    <span class="badge bg-info">{{ $role->name }}</span>
-                                                @endforeach
-                                            </td>
-                                            <td>
-                                                <button class="btn btn-sm btn-warning btnEditUser" 
+                        <div>
+                            <h1 class="page-title">Manajemen User</h1>
+                            <p class="page-subtitle">Kelola akun user aplikasi</p>
+                        </div>
+                    </div>
+                    <button class="btn-add-primary" id="btnTambahUser">
+                        <i class="bi bi-plus-circle"></i>
+                        <span>Tambah User</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Data Table Card -->
+            <div class="data-card">
+                <div class="data-card-header">
+                    <div class="data-card-title">
+                        <i class="bi bi-list-ul"></i>
+                        <span>Daftar User</span>
+                    </div>
+                    {{-- searchbox jika mau --}}
+                </div>
+                <div class="data-card-body">
+                    <div class="table-container">
+                        <table class="data-table" id="tabel-users">
+                            <thead>
+                                <tr>
+                                    <th class="col-number">#</th>
+                                    <th class="col-main">Nama</th>
+                                    <th class="col-secondary">Email</th>
+                                    <th class="col-secondary">Role</th>
+                                    <th class="col-action">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($users as $i => $user)
+                                    <tr class="data-row">
+                                        <td class="col-number">
+                                            <span class="row-number">{{ $i + 1 }}</span>
+                                        </td>
+                                        <td class="col-main">
+                                            <div class="item-info">
+                                                <span class="item-name">{{ $user->name }}</span>
+                                            </div>
+                                        </td>
+                                        <td class="col-secondary">
+                                            <span class="badge-unit">{{ $user->email }}</span>
+                                        </td>
+                                        <td class="col-secondary">
+                                            @foreach ($user->roles as $role)
+                                                <span class="badge bg-info">{{ $role->name }}</span>
+                                            @endforeach
+                                        </td>
+                                        <td class="col-action">
+                                            <div class="action-buttons">
+                                                <button class="btn-action btn-edit btnEditUser"
                                                     data-id="{{ $user->id }}"
                                                     data-name="{{ $user->name }}"
                                                     data-email="{{ $user->email }}"
                                                     data-roles="{{ json_encode($user->roles->pluck('name')) }}"
-                                                    data-bs-toggle="tooltip"
-                                                    data-bs-placement="top"
-                                                    title="Edit">
+                                                    data-bs-toggle="tooltip" title="Edit">
                                                     <i class="bi bi-pencil-square"></i>
                                                 </button>
-                                                <button class="btn btn-sm btn-danger btnHapusUser" 
+                                                <button class="btn-action btn-delete btnHapusUser"
                                                     data-id="{{ $user->id }}"
-                                                    data-bs-toggle="tooltip"
-                                                    data-bs-placement="top"
-                                                    title="Hapus">
+                                                    data-bs-toggle="tooltip" title="Hapus">
                                                     <i class="bi bi-trash"></i>
                                                 </button>
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                    @if ($users->count() == 0)
-                                        <tr>
-                                            <td colspan="5" class="text-center">Belum ada user terdaftar.</td>
-                                        </tr>
-                                    @endif
-                                </tbody>
-                            </table>
-                        </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                                @if ($users->count() == 0)
+                                    <tr>
+                                        <td colspan="5" class="empty-state">
+                                            <div class="empty-content">
+                                                <i class="bi bi-people"></i>
+                                                <h4>Belum ada data user</h4>
+                                                <p>Klik tombol "Tambah User" untuk memulai</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                @endif
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -68,50 +101,66 @@
 
     <!-- Modal User -->
     <div class="modal fade" id="modalUser" tabindex="-1" aria-labelledby="modalUserLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <form id="formUser">
-                @csrf
-                <input type="hidden" name="id" id="user_id">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="modalUserLabel">Tambah User</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content custom-modal">
+                <form id="formUser">
+                    @csrf
+                    <input type="hidden" name="id" id="user_id">
+                    <div class="modal-header custom-modal-header">
+                        <div class="modal-header-content">
+                            <div class="modal-icon">
+                                <i class="bi bi-person"></i>
+                            </div>
+                            <h5 class="modal-title" id="modalUserLabel">Tambah User</h5>
+                        </div>
+                        <button type="button" class="btn-close-custom" data-bs-dismiss="modal" aria-label="Tutup">
+                            <i class="bi bi-x"></i>
+                        </button>
                     </div>
-                    <div class="modal-body">
+                    <div class="modal-body custom-modal-body">
                         <div id="formUserAlert"></div>
-                        <div class="mb-3">
-                            <label for="user_name" class="form-label">Nama</label>
-                            <input type="text" class="form-control" id="user_name" name="name" required>
+                        <div class="form-group-custom">
+                            <label for="user_name" class="form-label-custom required">
+                                <i class="bi bi-person-badge"></i> Nama
+                            </label>
+                            <input type="text" class="form-control-custom" id="user_name" name="name" required>
                         </div>
-                        <div class="mb-3">
-                            <label for="user_email" class="form-label">Email</label>
-                            <input type="email" class="form-control" id="user_email" name="email" required>
+                        <div class="form-group-custom">
+                            <label for="user_email" class="form-label-custom required">
+                                <i class="bi bi-envelope"></i> Email
+                            </label>
+                            <input type="email" class="form-control-custom" id="user_email" name="email" required>
                         </div>
-                        <div class="mb-3">
-                            <label for="user_password" class="form-label">Password <span id="passwordHelp"
-                                    class="text-muted"></span></label>
-                            <input type="password" class="form-control" id="user_password" name="password">
+                        <div class="form-group-custom">
+                            <label for="user_password" class="form-label-custom">
+                                <i class="bi bi-key"></i> Password
+                                <span id="passwordHelp" class="text-muted"></span>
+                            </label>
+                            <input type="password" class="form-control-custom" id="user_password" name="password">
                         </div>
-                        <div class="mb-3">
-                            <label for="user_roles" class="form-label">Role</label>
-                            <select class="form-select" id="user_roles" name="roles[]" required multiple="multiple"
-                                style="width: 100%">
+                        <div class="form-group-custom">
+                            <label for="user_roles" class="form-label-custom required">
+                                <i class="bi bi-person-gear"></i> Role
+                            </label>
+                            <select class="form-control-custom" id="user_roles" name="roles[]" required multiple="multiple" style="width: 100%">
                                 @foreach ($roles as $role)
                                     <option value="{{ $role->name }}">{{ $role->name }}</option>
                                 @endforeach
                             </select>
                         </div>
                     </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                            <i class="bi bi-x-circle"></i> Batal
+                    <div class="modal-footer custom-modal-footer">
+                        <button type="button" class="btn-secondary-custom" data-bs-dismiss="modal">
+                            <i class="bi bi-x"></i>
+                            Batal
                         </button>
-                        <button type="submit" class="btn btn-primary" id="btnSimpanUser">
-                            <i class="bi bi-save"></i> Simpan
+                        <button type="submit" class="btn-primary-custom" id="btnSimpanUser">
+                            <i class="bi bi-check"></i>
+                            Simpan
                         </button>
                     </div>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
     </div>
 @endsection

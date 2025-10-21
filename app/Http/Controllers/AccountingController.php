@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Http\Controllers;
 
 use App\Exports\SalesReportExport;
@@ -8,12 +7,15 @@ use App\Models\Ffne;
 use App\Models\Ingredient;
 use App\Models\Karyawan;
 use App\Models\Payroll;
+use App\Models\PurchaseOrder;
 use App\Models\Sale;
 use App\Models\Setting;
 use App\Models\Supplier;
+use App\Models\SupplierPayment;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -41,10 +43,15 @@ class AccountingController extends Controller
                 'required',
                 Rule::in([Supplier::TYPE_TEMPO, Supplier::TYPE_PETTY_CASH]),
             ],
+            'credit_limit'   => [
+                'nullable',
+                'required_if:type,' . Supplier::TYPE_TEMPO,
+                'numeric',
+                'min:0',
+            ],
             'jatuh_tempo1'   => 'nullable|required_if:type,' . Supplier::TYPE_TEMPO . '|date', // Wajib jika Tempo
-            'jatuh_tempo2'   => 'nullable|date|after_or_equal:jatuh_tempo1',               // Opsional, harus setelah tempo1 jika diisi
+            'jatuh_tempo2'   => 'nullable|date|after_or_equal:jatuh_tempo1',                   // Opsional, harus setelah tempo1 jika diisi
         ], [
-            // Pesan error custom
             'credit_limit.required_if'    => 'Limit kredit wajib diisi untuk supplier tipe Tempo.',
             'jatuh_tempo1.required_if'    => 'Tanggal Jatuh Tempo 1 wajib diisi untuk supplier tipe Tempo.',
             'jatuh_tempo2.after_or_equal' => 'Tanggal Jatuh Tempo 2 harus sama atau setelah Tanggal Jatuh Tempo 1.',
@@ -56,6 +63,7 @@ class AccountingController extends Controller
             $validated['jatuh_tempo2'] = null;
         } else {
             $validated['credit_limit'] = $validated['credit_limit'] ?? 0;
+            $validated['jatuh_tempo2'] = $validated['jatuh_tempo2'] ?? null;
         }
 
         try {
@@ -89,24 +97,125 @@ class AccountingController extends Controller
         return response()->json(['status' => 'success', 'message' => 'Supplier berhasil dihapus.']);
     }
 
+    public function suppPaymentIndex()
+    {
+        $suppliers = Supplier::where('type', Supplier::TYPE_TEMPO)
+            ->orderBy('name')
+            ->get(['id', 'name', 'jatuh_tempo1', 'jatuh_tempo2']);
+
+        $outstandingPOs = PurchaseOrder::with('supplier:id,name')
+            ->where('payment_type', PurchaseOrder::PAYMENT_TEMPO)
+            ->where('payment_status', '!=', PurchaseOrder::STATUS_LUNAS)
+            ->orderBy('order_date', 'asc')
+            ->get();
+
+        $groupedPOs = $outstandingPOs->groupBy('supplier_id');
+
+        return view('accounting.supplier_payments.index', compact('suppliers', 'groupedPOs'));
+    }
+
+    public function suppPaymentStore(Request $request)
+    {
+        $validated = $request->validate([
+            'purchase_order_id' => 'required|exists:purchase_orders,id',
+            'payment_date'      => 'required|date',
+            'amount'            => 'required|numeric|min:0.01',
+            'payment_method'    => 'required|string|max:50',
+            'reference_number'  => 'nullable|string|max:100',
+            'notes'             => 'nullable|string|max:1000',
+            'proof_file'        => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
+        ]);
+
+        try {
+            DB::transaction(function () use ($request, $validated) {
+                $po = PurchaseOrder::with('supplier')->findOrFail($validated['purchase_order_id']);
+
+                if ($po->payment_type !== PurchaseOrder::PAYMENT_TEMPO) {
+                    throw new \Exception("PO #{$po->po_number} bukan merupakan PO Tempo.");
+                }
+
+                if ($po->payment_status === PurchaseOrder::STATUS_LUNAS) {
+                    throw new \Exception("PO #{$po->po_number} sudah lunas.");
+                }
+
+                // Ambil total pembayaran yang sudah masuk di DB (dari tabel supplier_payments, bukan hanya field di PO)
+                $alreadyPaid = SupplierPayment::where('purchase_order_id', $po->id)->sum('amount');
+                $payAmount   = (float) $validated['amount'];
+                $totalPaid   = $alreadyPaid + $payAmount;
+                $outstanding = (float) max($po->total_amount - $alreadyPaid, 0);
+
+                if ($payAmount > $outstanding) {
+                    throw new \Exception("Jumlah bayar melebihi sisa tagihan.");
+                }
+
+                $filePath = null;
+                if ($request->hasFile('proof_file')) {
+                    $filePath = $request->file('proof_file')->store('supplier_payments_proof', 'public');
+                }
+
+                SupplierPayment::create([
+                    'purchase_order_id' => $po->id,
+                    'supplier_id'       => $po->supplier_id,
+                    'payment_date'      => $validated['payment_date'],
+                    'amount'            => $payAmount,
+                    'payment_method'    => $validated['payment_method'],
+                    'reference_number'  => $validated['reference_number'] ?? null,
+                    'proof_file'        => $filePath,
+                    'notes'             => $validated['notes'] ?? null,
+                    'user_id'           => auth()->id(),
+                ]);
+
+                $isLunas   = $totalPaid >= round($po->total_amount - 0.001, 2);
+                $newStatus = $isLunas ? PurchaseOrder::STATUS_LUNAS : PurchaseOrder::STATUS_SEBAGIAN;
+
+                $po->update([
+                    'paid_amount'    => $totalPaid,
+                    'payment_status' => $newStatus,
+                ]);
+
+                if ($po->supplier) {
+                    Supplier::where('id', $po->supplier_id)->increment('credit_limit', $payAmount);
+                } else {
+                    \Log::warning("Supplier tidak ditemukan saat mencoba mengembalikan limit kredit untuk PO ID: {$po->id}");
+                }
+            });
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Pembayaran supplier berhasil dicatat.',
+            ]);
+        } catch (\Exception $e) {
+            \Log::error("Error saving supplier payment: " . $e->getMessage());
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Gagal mencatat pembayaran: ' . $e->getMessage(),
+            ], 422);
+        }
+    }
+
     public function creditLimitMonitoring()
     {
         $suppliers = Supplier::where('credit_limit', '>', 0)
             ->with(['purchaseOrders' => function ($query) {
-                $query->whereIn('status', ['unpaid', 'partially_paid']);
+                $query->where('payment_type', Supplier::TYPE_TEMPO)
+                    ->where('status', 'diterima');
             }])
             ->get();
 
         $suppliersData = $suppliers->map(function ($supplier) {
+            // Total utang supplier = total_amount semua PO pembayaran tempo status 'diterima', dikurangi paid_amount
             $currentDebt = $supplier->purchaseOrders->sum(function ($order) {
-                return $order->total_amount - $order->paid_amount;
+                return max($order->total_amount - $order->paid_amount, 0);
             });
 
             $remainingCredit = $supplier->credit_limit - $currentDebt;
 
-            $usagePercentage = ($supplier->credit_limit > 0) ? ($currentDebt / $supplier->credit_limit) * 100 : 0;
+            $usagePercentage = ($supplier->credit_limit > 0)
+                ? ($currentDebt / $supplier->credit_limit) * 100
+                : 0;
 
             return (object) [
+                'id'               => $supplier->id,
                 'name'             => $supplier->name,
                 'credit_limit'     => $supplier->credit_limit,
                 'current_debt'     => $currentDebt,
@@ -115,7 +224,79 @@ class AccountingController extends Controller
             ];
         });
 
-        return view('accounting.suppliers.credit_limit', ['suppliersData' => $suppliersData]);
+        return view('accounting.suppliers.credit_limit', [
+            'suppliersData' => $suppliersData,
+        ]);
+    }
+
+    public function suppCreditHistory(Supplier $supplier)
+    {
+
+        if (trim($supplier->type) !== Supplier::TYPE_TEMPO) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Riwayat kredit hanya tersedia untuk supplier tipe Tempo.',
+            ], 400);
+        }
+
+        try {
+            $purchaseOrders = PurchaseOrder::where('supplier_id', $supplier->id)
+                ->where('payment_type', PurchaseOrder::PAYMENT_TEMPO) // Hanya PO Tempo
+                ->orderBy('order_date', 'desc')
+                ->get([
+                    'id',
+                    'order_date',
+                    'po_number',
+                    'notes',
+                    'total_amount',
+                    'paid_amount',
+                ]);
+
+            $poHistory = $purchaseOrders->map(function ($po) {
+                return [
+                    'order_date'         => $po->order_date ? $po->order_date->format('d M Y') : '-',
+                    'po_number'          => $po->po_number,
+                    'description'        => $po->notes ?? '-', // Gunakan notes sebagai deskripsi
+                    'total_amount'       => (float) $po->total_amount,
+                    'paid_amount'        => (float) $po->paid_amount,
+                    'outstanding_amount' => $po->outstanding_amount,
+                ];
+            });
+
+            $supplierPayments = SupplierPayment::where('supplier_id', $supplier->id)
+                ->orderBy('payment_date', 'desc')
+                ->get([
+                    'id',
+                    'payment_date',
+                    'reference_number',
+                    'payment_method',
+                    'amount',
+                    'notes',
+                ]);
+
+            $paymentHistory = $supplierPayments->map(function ($payment) {
+                return [
+                    'payment_date'     => $payment->payment_date ? $payment->payment_date->format('d M Y') : '-',
+                    'reference_number' => $payment->reference_number,
+                    'payment_method'   => $payment->payment_method,
+                    'amount'           => (float) $payment->amount,
+                    'notes'            => $payment->notes,
+                ];
+            });
+
+            return response()->json([
+                'status'          => 'success',
+                'po_history'      => $poHistory,
+                'payment_history' => $paymentHistory,
+            ]);
+
+        } catch (Throwable $e) {
+            Log::error("Error fetching credit history for supplier {$supplier->id}: " . $e->getMessage());
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Gagal mengambil data riwayat.',
+            ], 500); // Internal Server Error
+        }
     }
 
     public function salesReport(Request $request)
@@ -154,8 +335,30 @@ class AccountingController extends Controller
 
         $sales = $query->with('user')->get();
 
-        $fileName = 'laporan-penjualan-' . Str::slug($reportTitle) . '.xlsx';
-        return Excel::download(new SalesReportExport($sales), $fileName);
+        $fileName = 'laporan-penjualan-' . Str::slug($reportTitle);
+
+        $dataForExport = $sales->map(function ($sale) {
+            return [
+                'No Transaksi'     => $sale->transaction_code,
+                'Tanggal'          => $sale->created_at ? \Carbon\Carbon::parse($sale->created_at)->format('Y-m-d H:i:s') : null,
+                'Nama Kasir'       => optional($sale->user)->name,
+                'Sub Total'        => (float) $sale->subtotal,
+                'Diskon'           => (float) $sale->discount_amount,
+                'Pajak'            => (float) $sale->tax_amount,
+                'Total'            => (float) $sale->total_amount,
+                'Status'           => $sale->status,
+                'Nama Customer'    => $sale->customer_name,
+                'Order Type'       => $sale->order_type,
+                'Tipe'             => $sale->type,
+            ];
+        });
+
+        return response()->json([
+            'status'      => 'success',
+            'fileName'    => $fileName . '.xlsx', // Pastikan ekstensi .xlsx
+            'reportTitle' => $reportTitle,
+            'salesData'   => $dataForExport,
+        ]);
     }
 
     public function salesReportPdf(Request $request)
@@ -206,7 +409,6 @@ class AccountingController extends Controller
         }
 
         $query = Sale::query()
-            ->where('status', 'completed')
             ->latest();
 
         $reportTitle = "Laporan Penjualan Harian";
@@ -242,9 +444,6 @@ class AccountingController extends Controller
 
         return [$query, $reportTitle, $filters];
     }
-    // Tambahkan method baru ini di AccountingController.php
-    // Hapus method stockInReport, stockOutReport, stockInReportExport, stockOutReportExport yang lama
-
     public function stockMovementReport(Request $request)
     {
         [$query, $filters, $reportTitle] = $this->buildStockMovementQuery($request);
@@ -254,21 +453,21 @@ class AccountingController extends Controller
         // Gabungkan ingredients dan ffnes untuk dropdown
         $allItems = collect();
 
-        $ingredients = Ingredient::orderBy('name')->get()->map(function($item) {
+        $ingredients = Ingredient::orderBy('name')->get()->map(function ($item) {
             return [
-                'id' => $item->id,
-                'name' => $item->name,
-                'type' => 'ingredient',
-                'display_name' => $item->name . ' (Bahan Baku)'
+                'id'           => $item->id,
+                'name'         => $item->name,
+                'type'         => 'ingredient',
+                'display_name' => $item->name . ' (Bahan Baku)',
             ];
         });
 
-        $ffnes = Ffne::orderBy('nama_ffne')->get()->map(function($item) {
+        $ffnes = Ffne::orderBy('nama_ffne')->get()->map(function ($item) {
             return [
-                'id' => $item->id,
-                'name' => $item->nama_ffne,
-                'type' => 'ffne',
-                'display_name' => $item->nama_ffne . ' (FFNE)'
+                'id'           => $item->id,
+                'name'         => $item->nama_ffne,
+                'type'         => 'ffne',
+                'display_name' => $item->nama_ffne . ' (FFNE)',
             ];
         });
 
@@ -284,33 +483,14 @@ class AccountingController extends Controller
 
     public function stockMovementExport(Request $request, $type)
     {
-        if (!in_array($type, ['excel', 'pdf'])) {
-            abort(404);
+        if (! in_array($type, ['excel', 'pdf'])) {
+            abort(404, "Tipe ekspor tidak valid.");
         }
 
         [$query, $filters, $reportTitle] = $this->buildStockMovementQuery($request);
-        $movements = $query->get();
-        $settings = Setting::pluck('value', 'key')->toArray();
-        $fileName = 'laporan-mutasi-stok-' . Str::slug($reportTitle);
-
-        if ($type === 'excel') {
-            $settings = Setting::pluck('value', 'key')->toArray();
-
-            $storeInfo = [
-                'store_name'    => $settings['store_name'] ?? 'Nama Toko',
-                'store_phone'   => $settings['store_phone'] ?? '-',
-                'store_address' => $settings['store_address'] ?? '-',
-                'store_logo'    => $settings['store_logo'] ?? null,
-                'report_period' => Carbon::parse($filters['start_date'])->format('d M Y')
-                                . ' - ' . Carbon::parse($filters['end_date'])->format('d M Y'),
-            ];
-
-            return Excel::download(
-                new StockMovementExport($movements, $reportTitle, $storeInfo),
-                $fileName . '.xlsx'
-            );
-        }
-
+        $movements                       = $query->get(); // Ambil semua data
+        $settings                        = Setting::pluck('value', 'key')->toArray();
+        $fileName                        = 'laporan-mutasi-stok-' . Str::slug($reportTitle);
 
         if ($type === 'pdf') {
             $pdf = Pdf::loadView(
@@ -319,25 +499,53 @@ class AccountingController extends Controller
             )->setPaper('a4', 'landscape');
             return $pdf->download($fileName . '.pdf');
         }
+
+        $dataForExport = $movements->map(function ($move) {
+            // Ambil satuan sesuai tipe item
+            $satuan = null;
+            if ($move->item_type === 'ingredient') {
+                $satuan = property_exists($move, 'unit') || isset($move->unit) ? $move->unit : null;
+            } elseif ($move->item_type === 'ffne') {
+                $satuan = property_exists($move, 'satuan_ffne') || isset($move->satuan_ffne) ? $move->satuan_ffne : null;
+            }
+            return [
+                'Referensi' => $move->reference,
+                'Tanggal'   => Carbon::parse($move->movement_date)->format('Y-m-d H:i:s'),
+                'ID Item'   => $move->item_id,
+                'Tipe Item' => $move->item_type,
+                'Nama Item' => $move->name,
+                'Arah'      => $move->movement_direction,
+                'Jumlah'    => (float) $move->quantity, // Pastikan jadi angka
+                'Satuan'    => $satuan,
+                'Deskripsi' => $move->description,
+            ];
+        });
+
+        return response()->json([
+            'status'      => 'success',
+            'fileName'    => $fileName . '.xlsx', // Pastikan ekstensi .xlsx
+            'reportTitle' => $reportTitle,
+            'salesData'   => $dataForExport, // Ganti nama key agar konsisten
+        ]);
     }
 
     private function buildStockMovementQuery(Request $request)
     {
         $request->validate([
-            'start_date'     => 'nullable|date',
-            'end_date'       => 'nullable|date|after_or_equal:start_date',
-            'item_id'        => 'nullable|integer',
-            'item_type'      => 'nullable|string|in:ingredient,ffne',
-            'movement_type'  => 'nullable|string|in:in,out',
+            'start_date'    => 'nullable|date',
+            'end_date'      => 'nullable|date|after_or_equal:start_date',
+            'item_id'       => 'nullable|integer',
+            'item_type'     => 'nullable|string|in:ingredient,ffne',
+            'movement_type' => 'nullable|string|in:in,out',
         ]);
 
-        $startDate     = $request->input('start_date', now()->startOfMonth()->toDateString());
-        $endDate       = $request->input('end_date', now()->endOfMonth()->toDateString());
-        $movementType  = $request->input('movement_type');
-        $itemId        = $request->input('item_id');
-        $itemType      = $request->input('item_type');
+        $startDate    = $request->input('start_date', now()->startOfMonth()->toDateString());
+        $endDate      = $request->input('end_date', now()->endOfMonth()->toDateString());
+        $movementType = $request->input('movement_type');
+        $itemId       = $request->input('item_id');
+        $itemType     = $request->input('item_type');
 
-        // Query Barang Masuk (Ingredient only) - 10 kolom
+        // Query Barang Masuk (Ingredient only) - tambahkan kolom unit
         $stockIn = DB::table('goods_receipt_items')
             ->join('goods_receipts', 'goods_receipts.id', '=', 'goods_receipt_items.goods_receipt_id')
             ->join('purchase_order_items', 'purchase_order_items.id', '=', 'goods_receipt_items.purchase_order_item_id')
@@ -352,11 +560,13 @@ class AccountingController extends Controller
                 'ingredients.name',
                 DB::raw('"in" as movement_direction'),
                 'goods_receipt_items.quantity_received as quantity',
+                DB::raw('ingredients.unit as unit'), // Tambahkan kolom unit dari ingredients
+                DB::raw('NULL as satuan_ffne'), // Kolom satuan_ffne dikosongkan
                 DB::raw('"Dikirim Dari " || suppliers.name as description')
             )
             ->whereBetween(DB::raw('DATE(goods_receipts.created_at)'), [$startDate, $endDate]);
 
-        // Query Barang Keluar - Penjualan (Ingredient only) - 10 kolom
+        // Query Barang Keluar - Penjualan (Ingredient only) - tambahkan kolom unit
         $stockOutSales = DB::table('sale_items')
             ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
             ->join('ingredient_menu_item', 'ingredient_menu_item.menu_item_id', '=', 'sale_items.menu_item_id')
@@ -369,12 +579,14 @@ class AccountingController extends Controller
                 'ingredients.name',
                 DB::raw('"out" as movement_direction'),
                 DB::raw('sale_items.quantity * ingredient_menu_item.quantity as quantity'),
+                DB::raw('ingredients.unit as unit'), // Tambahkan kolom unit dari ingredients
+                DB::raw('NULL as satuan_ffne'), // Kolom satuan_ffne dikosongkan
                 DB::raw('"Pemakaian Penjualan" as description')
             )
             ->where('sales.status', 'completed')
             ->whereBetween(DB::raw('DATE(sales.created_at)'), [$startDate, $endDate]);
 
-        // Query Barang Keluar - Rusak (FFNE only) - 10 kolom
+        // Query Barang Keluar - Rusak (FFNE only) - tambahkan kolom satuan_ffne
         $stockOutDamage = DB::table('ffnes')
             ->select(
                 DB::raw('"FFNE-R-" || ffnes.id as reference'),
@@ -384,6 +596,8 @@ class AccountingController extends Controller
                 'ffnes.nama_ffne as name',
                 DB::raw('"out" as movement_direction'),
                 DB::raw('1 as quantity'),
+                DB::raw('NULL as unit'), // Kolom unit dikosongkan
+                'ffnes.satuan_ffne as satuan_ffne', // Tambahkan kolom satuan_ffne dari ffnes
                 DB::raw('"Barang Rusak" as description')
             )
             ->where('ffnes.kondisi_ffne', 1)
@@ -445,15 +659,15 @@ class AccountingController extends Controller
     public function payrollStore(Request $request)
     {
         $validated = $request->validate([
-            'id'                   => 'nullable|exists:payroll,id',
-            'karyawan_id'          => 'required|exists:karyawans,id',
-            'bulan'                => 'required|integer|min:1|max:12',
-            'tahun'                => 'required|integer|min:2000',
-            'jumlah_absensi'       => 'required|integer|min:0',
-            'nominal_gaji'         => 'required|numeric|min:0',
-            'status_pembayaran'    => 'required|in:pending,dibayar',
-            'tanggal_pembayaran'   => 'nullable|required_if:status_pembayaran,dibayar|date',
-            'file_bukti'           => 'nullable|required_if:status_pembayaran,dibayar|file|mimes:jpg,jpeg,png,pdf|max:2048',
+            'id'                 => 'nullable|exists:payroll,id',
+            'karyawan_id'        => 'required|exists:karyawans,id',
+            'bulan'              => 'required|integer|min:1|max:12',
+            'tahun'              => 'required|integer|min:2000',
+            'jumlah_absensi'     => 'required|integer|min:0',
+            'nominal_gaji'       => 'required|numeric|min:0',
+            'status_pembayaran'  => 'required|in:pending,dibayar',
+            'tanggal_pembayaran' => 'nullable|required_if:status_pembayaran,dibayar|date',
+            'file_bukti'         => 'nullable|required_if:status_pembayaran,dibayar|file|mimes:jpg,jpeg,png,pdf|max:2048',
         ]);
 
         unset($validated['id']);
@@ -468,7 +682,7 @@ class AccountingController extends Controller
             }
 
             // Logika Create (INSERT)
-            if (!$request->filled('id')) {
+            if (! $request->filled('id')) {
                 $request->validate([
                     'karyawan_id' => Rule::unique('payroll')->where(function ($query) use ($request) {
                         return $query->where('bulan', $request->bulan)
@@ -494,7 +708,7 @@ class AccountingController extends Controller
                     if ($request->hasFile('file_bukti') && $payroll->file_bukti) { // <-- Aman
                         Storage::delete($payroll->file_bukti);
                     }
-                    if (!$request->hasFile('file_bukti') && $validated['status_pembayaran'] == 'dibayar') {
+                    if (! $request->hasFile('file_bukti') && $validated['status_pembayaran'] == 'dibayar') {
                         $validated['file_bukti'] = $payroll->file_bukti; // <-- Aman
                     }
                 }
@@ -531,11 +745,11 @@ class AccountingController extends Controller
         try {
             $payroll = Payroll::findOrFail($id);
 
-            if (!$payroll->file_bukti) {
+            if (! $payroll->file_bukti) {
                 abort(404, 'File bukti tidak ditemukan di database.');
             }
 
-            if (!Storage::exists($payroll->file_bukti)) {
+            if (! Storage::exists($payroll->file_bukti)) {
                 abort(404, 'File bukti tidak ada di storage.');
             }
 

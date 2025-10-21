@@ -1,9 +1,10 @@
 <?php
-
 namespace App\Http\Controllers;
 
 use App\Models\EnergyCost;
 use App\Models\Extra;
+use App\Models\Ffne;
+use App\Models\FfneStockAdj;
 use App\Models\Ingredient;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
@@ -15,7 +16,7 @@ use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
-use App\Models\Ffne;
+use Throwable;
 
 class KitchenController extends Controller
 {
@@ -47,11 +48,22 @@ class KitchenController extends Controller
     }
 
     // Bahan Baku Management
-    public function bahanbakuIndex()
+    public function bahanbakuKitchenIndex()
     {
-        $bahanbakus = Ingredient::orderBy('id')->get();
-        $suppliers  = Supplier::orderBy('name')->get();
-        return view('kitchen.bahanbaku.index', compact('bahanbakus', 'suppliers'));
+        $bahanbakus = Ingredient::where('category', Ingredient::CATEGORY_KITCHEN)
+            ->orderBy('name')
+            ->get();
+        $suppliers = Supplier::orderBy('name')->get();
+        return view('kitchen.bahanbaku.kitchen.index', compact('bahanbakus', 'suppliers'));
+    }
+
+    public function bahanbakuBarIndex()
+    {
+        $bahanbakus = Ingredient::where('category', Ingredient::CATEGORY_BAR)
+            ->orderBy('name')
+            ->get();
+        $suppliers = Supplier::orderBy('name')->get();
+        return view('kitchen.bahanbaku.bar.index', compact('bahanbakus', 'suppliers'));
     }
 
     public function bahanbakuSubmit(Request $request)
@@ -63,6 +75,7 @@ class KitchenController extends Controller
             'cost_price'    => 'required|numeric|min:0',
             'supplier_id'   => 'required|exists:suppliers,id', // Validasi supplier
             'minimum_stock' => 'required|numeric|min:0',
+            'category'      => ['required', Rule::in([Ingredient::CATEGORY_KITCHEN, Ingredient::CATEGORY_BAR])],
         ]);
 
         Ingredient::updateOrCreate(
@@ -126,7 +139,7 @@ class KitchenController extends Controller
             'description'      => $validated['description'] ?? null,
         ];
 
-        if (!$request->id) {
+        if (! $request->id) {
             $category     = MenuCategory::find($validated['category_id']);
             $categoryName = strtolower($category->name);
             if (strpos($categoryName, 'makanan') !== false) {
@@ -215,21 +228,50 @@ class KitchenController extends Controller
 
     public function storerequestIndex()
     {
-        $storerequests = StoreRequest::with(['items.ingredient'])->orderBy('id', 'desc')->get();
-        $bahanbakus    = Ingredient::orderBy('id')->get();
+        $storerequests = StoreRequest::with(['items.itemable'])
+            ->orderBy('id', 'desc')
+            ->get();
+
+        $ingredients = Ingredient::orderBy('id')->get();
+        $ffnes       = \App\Models\Ffne::where('kategori_ffne', 'Barang Habis Pakai')->orderBy('id')->get();
+        $bahanbakus  = $ingredients->map(function ($item) {
+            return [
+                'id'         => $item->id,
+                'name'       => $item->name,
+                'cost_price' => $item->cost_price ?? 0,
+                'type'       => 'App\Models\Ingredient', // <-- Gunakan Nama Kelas Model
+            ];
+        })->concat(
+            $ffnes->map(function ($item) {
+                return [
+                    'id'         => $item->id,
+                    'name'       => $item->nama_ffne,
+                    'cost_price' => $item->harga ?? 0,
+                    'type'       => 'App\Models\Ffne', // <-- Gunakan Nama Kelas Model
+                ];
+            })
+        );
+
         return view('kitchen.storerequest.index', compact('storerequests', 'bahanbakus'));
     }
 
     public function storerequestSubmit(Request $request)
     {
         $validated = $request->validate([
-            'note'                       => 'nullable|string',
-            'items'                      => 'required|array|min:1',
-            'items.*.ingredient_id'      => 'required|exists:ingredients,id',
+            'note'                   => 'nullable|string',
+            'items'                  => 'required|array|min:1',
+            // Validasi item_id dan item_type baru
+            'items.*.item_id'        => 'required|integer', 
+            'items.*.item_type'      => ['required', \Illuminate\Validation\Rule::in(['App\Models\Ingredient', 'App\Models\Ffne'])], // Validasi tipe
             'items.*.requested_quantity' => 'required|numeric|min:0.01',
+        ], [
+             'items.required' => 'Minimal harus ada 1 item barang.',
+             'items.*.item_id.required' => 'Item barang wajib dipilih.',
+             'items.*.item_type.required' => 'Tipe item tidak valid.',
+             'items.*.requested_quantity.required' => 'Jumlah (Qty) wajib diisi.',
         ]);
+        // --- AKHIR PERBAIKAN VALIDASI ---
 
-        // Generate request_number
         $date        = now()->format('Ymd');
         $lastRequest = StoreRequest::where('request_number', 'like', "SR-{$date}%")
             ->orderBy('id', 'desc')->first();
@@ -241,36 +283,47 @@ class KitchenController extends Controller
             'remarks'        => $validated['note'] ?? null,
             'issued_at'      => now(),
             'issued_by'      => auth()->id(),
-            'status'         => 'proses', // Hardcoded status
+            'status'         => 'proses',
         ];
 
-        \Log::info('StoreRequest Input', $storeRequestData);
-        \Log::info('Items Input', $validated['items']);
+        try { // <-- Tambahkan try-catch-DB::transaction untuk keamanan data
+            
+            $storeRequest = \DB::transaction(function() use ($request, $storeRequestData, $validated) {
+                
+                $storeRequest = \App\Models\StoreRequest::updateOrCreate(
+                    ['id' => $request->id],
+                    $storeRequestData
+                );
 
-        $storeRequest = StoreRequest::updateOrCreate(
-            ['id' => $request->id],
-            $storeRequestData
-        );
+                // Hapus item lama jika ini adalah update
+                if ($request->id) {
+                    \App\Models\StoreRequestItem::where('store_request_id', $storeRequest->id)->delete();
+                }
 
-        // Handle items
-        if ($request->id) {
-            StoreRequestItem::where('store_request_id', $storeRequest->id)->delete();
+                // --- PERBAIKI PENYIMPANAN ITEM ---
+                $itemsData = [];
+                foreach ($validated['items'] as $item) {
+                    $itemsData[] = [
+                        'store_request_id'   => $storeRequest->id,
+                        'itemable_id'        => $item['item_id'],       // <-- Ganti 'ingredient_id'
+                        'itemable_type'      => $item['item_type'],     // <-- Tambahkan 'itemable_type'
+                        'requested_quantity' => $item['requested_quantity'],
+                        'issued_quantity'    => $item['requested_quantity'], // Default sama
+                        'created_at'         => now(),
+                        'updated_at'         => now(),
+                    ];
+                }
+                // Simpan item baru
+                \DB::table('store_request_items')->insert($itemsData);
+                // --- AKHIR PERBAIKAN ---
+
+                return $storeRequest; // Kembalikan storeRequest dari transaksi
+            }); // <-- Akhir DB::transaction
+
+        } catch (\Throwable $e) { // Tangkap semua error
+            \Log::error('Gagal submit Store Request: ' . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Gagal menyimpan data: ' . $e->getMessage()], 500);
         }
-
-        $itemsData = [];
-        foreach ($validated['items'] as $item) {
-            $itemsData[] = [
-                'store_request_id'   => $storeRequest->id,
-                'ingredient_id'      => $item['ingredient_id'],
-                'requested_quantity' => $item['requested_quantity'],
-                'issued_quantity'    => $item['requested_quantity'], // Default sama dengan requested
-                'created_at'         => now(),
-                'updated_at'         => now(),
-            ];
-        }
-        DB::table('store_request_items')->insert($itemsData);
-
-        \Log::info('StoreRequest ID ' . $storeRequest->id . ' Items Inserted', $itemsData);
 
         $message = $request->id ? 'Data permintaan berhasil diperbarui.' : 'Permintaan baru berhasil ditambahkan.';
         return response()->json(['status' => 'success', 'message' => $message]);
@@ -285,7 +338,6 @@ class KitchenController extends Controller
 
     public function storerequestPrint($id)
     {
-        // Mengambil store request beserta relasi ke items, ingredient, dan user (issuer)
         $storeRequest = StoreRequest::with(['items.ingredient', 'issuer'])->findOrFail($id);
         return view('kitchen.storerequest._print', compact('storeRequest'));
     }
@@ -297,10 +349,8 @@ class KitchenController extends Controller
             'selection_type' => ['required', Rule::in(['single', 'multiple'])],
         ]);
 
-        // Simpan data grup modifier
         $modifierGroup = ModifierGroup::create($validated);
 
-        // Return JSON untuk swal
         return response()->json([
             'status'            => 'success',
             'message'           => 'Grup Pilihan berhasil dibuat.',
@@ -399,54 +449,134 @@ class KitchenController extends Controller
 
     public function submitFFNE(Request $request)
     {
-        // ✅ Hapus 'kode_ffne' dari validasi
-        $validated = $request->validate([
+        $ffneId = $request->id;
+
+        $rules = [
             'nama_ffne'     => 'required|string|max:255',
             'kategori_ffne' => ['required', Rule::in(['Barang Habis Pakai', 'Barang Tidak Habis Pakai'])],
             'harga'         => 'required|numeric|min:0',
             'satuan_ffne'   => 'required|string|max:100',
             'kondisi_ffne'  => 'nullable|boolean',
-        ]);
+            'stock'         => 'nullable|numeric|min:0',
+        ];
 
-        // Checkbox logic: dicentang = true, tidak dicentang = false
-        $validated['kondisi_ffne'] = $request->has('kondisi_ffne');
-
-        $ffneData = $validated;
-
-        // ✅ Logika pembuatan kode otomatis HANYA untuk data baru
-        if (!$request->id) {
-            $prefix = ($validated['kategori_ffne'] === 'Barang Tidak Habis Pakai') ? 'F-' : 'E-';
-
-            // Cari kode terakhir dengan prefix yang sama
-            $lastFfne = Ffne::where('kode_ffne', 'like', $prefix . '%')->orderBy('kode_ffne', 'desc')->first();
-
-            $nextNumber = 1;
-            if ($lastFfne) {
-                // Ambil angka dari kode terakhir dan tambahkan 1
-                $lastNumber = (int) substr($lastFfne->kode_ffne, strlen($prefix));
-                $nextNumber = $lastNumber + 1;
-            }
-
-            // Gabungkan prefix dengan angka yang sudah diformat (misal: 001)
-            $ffneData['kode_ffne'] = $prefix . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
-        } else {
-             // Untuk proses update, pastikan validasi unique nama tidak bentrok dengan data itu sendiri
-             $request->validate([
-                'nama_ffne' => Rule::unique('ffnes')->ignore($request->id),
-             ]);
+        if (empty($ffneId)) {
+            $rules['stock'] = 'required|numeric|min:0';
         }
 
+        $validated = $request->validate($rules);
 
-        Ffne::updateOrCreate(['id' => $request->id], $ffneData);
+        $validated['kondisi_ffne'] = $request->has('kondisi_ffne');
 
-        $message = $request->id
-            ? 'Data FF&E berhasil diperbarui.'
-            : 'Data FF&E baru berhasil ditambahkan.';
+        try {
+            DB::transaction(function () use ($validated, $ffneId, $request) {
 
-        return response()->json(['status' => 'success', 'message' => $message]);
+                if ($ffneId) {
+                    $ffne = Ffne::findOrFail($ffneId);
+                    unset($validated['stock']);
+
+                    if ($ffne->kategori_ffne === 'Barang Habis Pakai' && $validated['kategori_ffne'] === 'Barang Tidak Habis Pakai') {
+                        $validated['stock'] = 0;
+                    }
+
+                    $ffne->update($validated);
+                    $message = 'Data FF&E berhasil diperbarui.';
+
+                } else {
+                    $prefix     = ($validated['kategori_ffne'] === 'Barang Tidak Habis Pakai') ? 'F-' : 'E-';
+                    $lastFfne   = Ffne::where('kode_ffne', 'like', $prefix . '%')->orderBy('kode_ffne', 'desc')->lockForUpdate()->first();
+                    $nextNumber = 1;
+                    if ($lastFfne) {
+                        $lastNumber = (int) substr($lastFfne->kode_ffne, strlen($prefix));
+                        $nextNumber = $lastNumber + 1;
+                    }
+                    $validated['kode_ffne'] = $prefix . str_pad($nextNumber, 3, '0', STR_PAD_LEFT);
+
+                    if ($validated['kategori_ffne'] === 'Barang Tidak Habis Pakai') {
+                        $validated['stock'] = 0; // Aset tidak dihitung stoknya
+                    } else {
+                        $validated['stock'] = $validated['stock'] ?? 0;
+                    }
+
+                    $ffne = Ffne::create($validated);
+
+                    if ($ffne->stock > 0) {
+                        FfneStockAdj::create([
+                            'ffne_id' => $ffne->id,
+                            'qty'     => $ffne->stock,
+                            'type'    => 'initial',
+                            'notes'   => 'Stok Awal',
+                        ]);
+                    }
+                    $message = 'Data FF&E baru berhasil ditambahkan.';
+                }
+
+                session()->flash('success_message', $message);
+
+            });
+            $message = session('success_message', 'Operasi berhasil.');
+
+            return response()->json(['status' => 'success', 'message' => $message]);
+
+        } catch (Throwable $e) { // Tangkap semua jenis error
+            \Log::error("Error submit FFNE: " . $e->getMessage());
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Gagal menyimpan: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
+    public function submitStockAdjustment(Request $request)
+    {
+        $validated = $request->validate([
+            'ffne_id' => 'required|exists:ffnes,id',
+            'type'    => 'required|in:usage,waste,adjustment',
+            'qty'     => 'required|numeric|min:0.01', // Selalu positif dari form
+            'notes'   => 'nullable|string|max:255',
+        ]);
 
+        try {
+            DB::transaction(function () use ($validated) {
+                $ffne = Ffne::findOrFail($validated['ffne_id']);
+
+                if ($ffne->kategori_ffne !== 'Barang Habis Pakai') {
+                    throw new \Exception('Hanya Barang Habis Pakai yang bisa disesuaikan stoknya.');
+                }
+
+                $qtyToChange  = (float) $validated['qty'];
+                $logQty       = 0;
+                $currentStock = (float) $ffne->stock;
+
+                if ($validated['type'] === 'usage' || $validated['type'] === 'waste') {
+                    if ($qtyToChange > $currentStock) {
+                        throw new \Exception("Stok tidak mencukupi. Sisa stok: $currentStock");
+                    }
+                    $logQty = -$qtyToChange;                 // Qty di log adalah negatif
+                    $ffne->decrement('stock', $qtyToChange); // Kurangi stok master
+
+                } elseif ($validated['type'] === 'adjustment') {
+                    $difference  = $qtyToChange - $currentStock; // Selisihnya
+                    $logQty      = $difference;                  // Catat selisihnya (+ atau -)
+                    $ffne->stock = $qtyToChange;
+                    $ffne->save();
+                }
+
+                FfneStockAdj::create([
+                    'ffne_id' => $ffne->id,
+                    'qty'     => $logQty, // Catat qty positif (initial/received) atau negatif (usage/waste) atau selisih (adjustment)
+                    'type'    => $validated['type'],
+                    'notes'   => $validated['notes'],
+                ]);
+            });
+
+            return response()->json(['status' => 'success', 'message' => 'Penyesuaian stok berhasil disimpan.']);
+
+        } catch (Throwable $e) {
+            \Log::error("Error submit Stock Adj: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422); // 422 jika error validasi (cth: stok kurang)
+        }
+    }
     public function destroyFFNE(Ffne $ffne)
     {
         $ffne->extras()->delete();

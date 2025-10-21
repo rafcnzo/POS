@@ -503,52 +503,53 @@
                 modal.show();
             });
 
-            // Tombol Edit Menu
             document.getElementById('tabel-menu').addEventListener('click', function(e) {
                 if (e.target.closest('.btnEditMenu')) {
-                    let btn = e.target.closest('.btnEditMenu');
-                    let id = btn.getAttribute('data-id');
-                    let name = btn.getAttribute('data-name');
-                    let category_id = btn.getAttribute('data-category_id');
-                    let price = btn.getAttribute('data-price');
-                    let description = btn.getAttribute('data-description');
-                    let ingredients = JSON.parse(btn.getAttribute('data-ingredients') || '[]');
-                    let attachedGroups = JSON.parse(btn.getAttribute('data-modifier-groups') || '[]');
+                    withAuth(() => {
+                        let btn = e.target.closest('.btnEditMenu');
+                        let id = btn.getAttribute('data-id');
+                        let name = btn.getAttribute('data-name');
+                        let category_id = btn.getAttribute('data-category_id');
+                        let price = btn.getAttribute('data-price');
+                        let description = btn.getAttribute('data-description');
+                        let ingredients = JSON.parse(btn.getAttribute('data-ingredients') || '[]');
+                        let attachedGroups = JSON.parse(btn.getAttribute('data-modifier-groups') || '[]');
 
-                    document.getElementById('modalMenuLabel').textContent = 'Edit Menu';
-                    document.querySelector('.modal-icon i').className = 'bi bi-pencil-square';
-                    document.getElementById('menu_id').value = id;
-                    document.getElementById('menu_name').value = name;
-                    document.getElementById('menu_category_id').value = category_id;
-                    document.getElementById('menu_price').value = price;
-                    document.getElementById('menu_description').value = description;
-                    document.getElementById('formMenuAlert').innerHTML = '';
-                    document.getElementById('ingredients-container').innerHTML = '';
+                        document.getElementById('modalMenuLabel').textContent = 'Edit Menu';
+                        document.querySelector('.modal-icon i').className = 'bi bi-pencil-square';
+                        document.getElementById('menu_id').value = id;
+                        document.getElementById('menu_name').value = name;
+                        document.getElementById('menu_category_id').value = category_id;
+                        document.getElementById('menu_price').value = price;
+                        document.getElementById('menu_description').value = description;
+                        document.getElementById('formMenuAlert').innerHTML = '';
+                        document.getElementById('ingredients-container').innerHTML = '';
 
-                    if (ingredients.length === 0) {
-                        addIngredientRow();
-                    } else {
-                        ingredients.forEach(ing => addIngredientRow(ing.id, ing.quantity));
-                    }
+                        if (ingredients.length === 0) {
+                            addIngredientRow();
+                        } else {
+                            ingredients.forEach(ing => addIngredientRow(ing.id, ing.quantity));
+                        }
 
-                    // 1. Reset semua checkbox terlebih dahulu
-                    document.querySelectorAll('#modifier-groups-container input[type="checkbox"]').forEach(checkbox => {
-                        checkbox.checked = false;
-                    });
-
-                    // 2. Centang checkbox yang ID-nya ada di `attachedGroups`
-                    if (attachedGroups.length > 0) {
-                        attachedGroups.forEach(groupId => {
-                            const checkbox = document.getElementById(`modifier-group-${groupId}`);
-                            if (checkbox) {
-                                checkbox.checked = true;
-                            }
+                        // 1. Reset semua checkbox terlebih dahulu
+                        document.querySelectorAll('#modifier-groups-container input[type="checkbox"]').forEach(checkbox => {
+                            checkbox.checked = false;
                         });
-                    }
 
-                    // Tampilkan modal
-                    var modal = new bootstrap.Modal(document.getElementById('modalMenu'));
-                    modal.show();
+                        // 2. Centang checkbox yang ID-nya ada di `attachedGroups`
+                        if (attachedGroups.length > 0) {
+                            attachedGroups.forEach(groupId => {
+                                const checkbox = document.getElementById(`modifier-group-${groupId}`);
+                                if (checkbox) {
+                                    checkbox.checked = true;
+                                }
+                            });
+                        }
+
+                        // Tampilkan modal
+                        var modal = new bootstrap.Modal(document.getElementById('modalMenu'));
+                        modal.show();
+                    });
                 }
             });
 
@@ -613,59 +614,60 @@
                     });
             });
 
-            // Tombol Hapus Menu (sama seperti sebelumnya)
+            // Tombol Hapus Menu (dengan withAuth)
             document.getElementById('tabel-menu').addEventListener('click', function(e) {
                 if (e.target.closest('.btnHapusMenu')) {
-                    let btn = e.target.closest('.btnHapusMenu');
-                    let id = btn.getAttribute('data-id');
-                    let url = document.getElementById('tabel-menu').getAttribute('data-url').replace(/0$/,
-                        id);
+                    withAuth(() => {
+                        let btn = e.target.closest('.btnHapusMenu');
+                        let id = btn.getAttribute('data-id');
+                        let url = document.getElementById('tabel-menu').getAttribute('data-url').replace(/0$/, id);
 
-                    Swal.fire({
-                        title: 'Yakin ingin menghapus?',
-                        text: "Data menu ini akan dihapus permanen!",
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonColor: '#d33',
-                        cancelButtonText: 'Batal',
-                        confirmButtonText: 'Ya, hapus!'
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            showLoading('Menghapus data menu...');
-                            fetch(url, {
-                                    method: 'DELETE',
-                                    headers: {
-                                        'X-Requested-With': 'XMLHttpRequest',
-                                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                                        'Accept': 'application/json'
-                                    }
-                                })
-                                .then(async response => {
-                                    hideLoading();
-                                    let data;
-                                    try {
-                                        data = await response.json();
-                                    } catch (err) {
-                                        data = {
-                                            status: 'error',
-                                            message: 'Gagal parsing response server.'
-                                        };
-                                    }
-                                    if (response.ok && data.status !== 'error') {
-                                        Swal.fire('Terhapus!', data.message, 'success')
-                                            .then(() => location.reload());
-                                    } else {
-                                        Swal.fire('Gagal', data.message ||
-                                            'Terjadi kesalahan saat menghapus data.',
+                        Swal.fire({
+                            title: 'Yakin ingin menghapus?',
+                            text: "Data menu ini akan dihapus permanen!",
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonColor: '#d33',
+                            cancelButtonText: 'Batal',
+                            confirmButtonText: 'Ya, hapus!'
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                showLoading('Menghapus data menu...');
+                                fetch(url, {
+                                        method: 'DELETE',
+                                        headers: {
+                                            'X-Requested-With': 'XMLHttpRequest',
+                                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                            'Accept': 'application/json'
+                                        }
+                                    })
+                                    .then(async response => {
+                                        hideLoading();
+                                        let data;
+                                        try {
+                                            data = await response.json();
+                                        } catch (err) {
+                                            data = {
+                                                status: 'error',
+                                                message: 'Gagal parsing response server.'
+                                            };
+                                        }
+                                        if (response.ok && data.status !== 'error') {
+                                            Swal.fire('Terhapus!', data.message, 'success')
+                                                .then(() => location.reload());
+                                        } else {
+                                            Swal.fire('Gagal', data.message ||
+                                                'Terjadi kesalahan saat menghapus data.',
+                                                'error');
+                                        }
+                                    })
+                                    .catch(error => {
+                                        hideLoading();
+                                        Swal.fire('Gagal', 'Terjadi kesalahan saat menghapus data.',
                                             'error');
-                                    }
-                                })
-                                .catch(error => {
-                                    hideLoading();
-                                    Swal.fire('Gagal', 'Terjadi kesalahan saat menghapus data.',
-                                        'error');
-                                });
-                        }
+                                    });
+                            }
+                        });
                     });
                 }
             });

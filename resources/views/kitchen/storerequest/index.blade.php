@@ -87,8 +87,32 @@
                                         <td class="col-secondary">
                                             <span class="badge-unit">
                                                 @foreach ($request->items as $item)
-                                                    {{ $item->ingredient->name ?? 'N/A' }}
-                                                    ({{ number_format($item->requested_quantity, 1) }} {{ $item->ingredient->unit ?? '' }})<br>
+                                                    {{-- Periksa apakah itemable ada & valid --}}
+                                                    @if ($item->itemable)
+                                                        @php
+                                                            $itemName = '';
+                                                            $itemSatuan = '';
+
+                                                            // Cek tipe modelnya
+                                                            if ($item->itemable instanceof \App\Models\Ingredient) {
+                                                                $itemName = $item->itemable->name;
+                                                                $itemSatuan = $item->itemable->unit;
+                                                            } elseif ($item->itemable instanceof \App\Models\Ffne) {
+                                                                $itemName = $item->itemable->nama_ffne;
+                                                                $itemSatuan = $item->itemable->satuan_ffne;
+                                                            } else {
+                                                                $itemName = 'N/A';
+                                                                $itemSatuan = 'N/A';
+                                                            }
+                                                        @endphp
+
+                                                        {{ $itemName }}
+                                                        ({{ number_format($item->requested_quantity, 1) }}
+                                                        {{ $itemSatuan }})
+                                                        <br>
+                                                    @else
+                                                        [Item Dihapus]<br>
+                                                    @endif
                                                 @endforeach
                                             </span>
                                         </td>
@@ -107,10 +131,9 @@
                                                     data-id="{{ $request->id }}" data-bs-toggle="tooltip" title="Hapus">
                                                     <i class="bi bi-trash"></i>
                                                 </button>
-                                                <a href="{{ route('kitchen.storerequest.print', ['id' => $request->id]) }}" 
-                                                    class="btn-action btn-print"
-                                                    target="_blank"
-                                                    data-bs-toggle="tooltip" title="Print">
+                                                <a href="{{ route('kitchen.storerequest.print', ['id' => $request->id]) }}"
+                                                    class="btn-action btn-print" target="_blank" data-bs-toggle="tooltip"
+                                                    title="Print">
                                                     <i class="bi bi-printer"></i>
                                                 </a>
                                             </div>
@@ -159,7 +182,8 @@
                             <label for="request_note" class="form-label-custom">
                                 <i class="bi bi-text-paragraph"></i> Keterangan
                             </label>
-                            <textarea class="form-control-custom" id="request_note" name="note" placeholder="Keterangan permintaan (opsional)"></textarea>
+                            <textarea class="form-control-custom" id="request_note" name="note"
+                                placeholder="Keterangan permintaan (opsional)"></textarea>
                         </div>
                         <div class="form-group-custom">
                             <label class="form-label-custom">
@@ -189,7 +213,7 @@
 
 @push('script')
     <script>
-        const bahanbakus = @json($bahanbakus->map(fn($b) => ['id' => $b->id, 'name' => $b->name, 'cost' => $b->cost_price ?? 0]));
+        const bahanbakus = @json($bahanbakus->values());
 
         document.addEventListener('DOMContentLoaded', function() {
             // Search functionality
@@ -206,47 +230,76 @@
             }
 
             // Fungsi untuk tambah row item
-            function addItemRow(ingredient_id = '', requested_quantity = '') {
+            function addItemRow(itemData = {}) { // itemData bisa berisi itemable_id, itemable_type, requested_quantity
                 const container = document.getElementById('items-container');
                 const index = container.children.length;
                 const row = document.createElement('div');
-                row.className = 'item-row d-flex align-items-center mb-2';
+                row.className = 'item-row d-flex align-items-center mb-2 gap-2'; // Tambah gap
 
-                // Safely get cost_price, fallback to 0 if undefined or null
+                // --- BUAT OPTIONS UNTUK SELECT ---
+                // 'itemData.itemable_id' dan 'itemData.itemable_type' digunakan untuk set 'selected'
                 const optionsHtml = bahanbakus.map(b => {
-                    // Use b.cost_price if available, else fallback to b.cost, else 0
-                    let costPrice = (typeof b.cost_price !== 'undefined' && b.cost_price !== null)
-                        ? b.cost_price
-                        : (typeof b.cost !== 'undefined' && b.cost !== null ? b.cost : 0);
-                    // Make sure costPrice is a number
-                    costPrice = Number(costPrice) || 0;
-                    return `<option value="${b.id}" ${b.id == ingredient_id ? 'selected' : ''}>${b.name} (Rp ${costPrice.toLocaleString('id-ID')})</option>`;
-                }).join('');
+                    let costPrice = Number(b.cost_price || b.cost || 0);
 
+                    // --- Kunci Perbaikan: Buat value berisi ID dan TIPE ---
+                    const optionValue = `${b.id}:${b.type}`; // Cth: "12:App\Models\Ingredient"
+
+                    // Cek apakah item ini harus terpilih (untuk mode edit)
+                    const isSelected = (b.id == itemData.itemable_id && b.type == itemData.itemable_type);
+
+                    return `<option value="${optionValue}" ${isSelected ? 'selected' : ''}>
+                                ${b.name} (Rp ${costPrice.toLocaleString('id-ID')})
+                            </option>`;
+                }).join('');
+                // --- AKHIR BUAT OPTIONS ---
+
+                // --- BUAT HTML ROW BARU ---
+                // Nama input diganti menjadi 'item_id_type' (untuk di-split) dan 'requested_quantity'
                 row.innerHTML = `
-                    <select name="items[${index}][ingredient_id]" class="form-control me-2" required>
+                    <select name="items[${index}][item_id_type]" class="form-control item-select" required style="flex: 1;">
                         <option value="">Pilih Bahan</option>
                         ${optionsHtml}
                     </select>
-                    <input type="number" name="items[${index}][requested_quantity]" value="${requested_quantity}" step="0.01" min="0.01" class="form-control me-2" placeholder="Jumlah" required>
+                    <input type="number" name="items[${index}][requested_quantity]" 
+                        value="${itemData.requested_quantity || ''}" 
+                        step="0.01" min="0.01" class="form-control" placeholder="Jumlah" required style="flex-basis: 120px;">
                     <button type="button" class="btn btn-danger btn-sm remove-item"><i class="bi bi-trash"></i></button>
+                    
+                    <input type="hidden" name="items[${index}][item_id]" value="${itemData.itemable_id || ''}">
+                    <input type="hidden" name="items[${index}][item_type]" value="${itemData.itemable_type || ''}">
                 `;
+                // --- AKHIR HTML ROW BARU ---
+                
                 container.appendChild(row);
 
-                // Event remove
+                // --- Listener untuk hapus row (index di-update) ---
                 row.querySelector('.remove-item').addEventListener('click', function() {
                     row.remove();
+                    // Update index 'name' untuk semua row yang tersisa
                     Array.from(container.children).forEach((r, i) => {
-                        r.querySelector('select').name = `items[${i}][ingredient_id]`;
-                        r.querySelector('input').name = `items[${i}][requested_quantity]`;
+                        r.querySelector('select').name = `items[${i}][item_id_type]`;
+                        r.querySelector('input[type="number"]').name = `items[${i}][requested_quantity]`;
+                        r.querySelector('input[type="hidden"][name$="[item_id]"]').name = `items[${i}][item_id]`;
+                        r.querySelector('input[type="hidden"][name$="[item_type]"]').name = `items[${i}][item_type]`;
                     });
                 });
+
+                // --- Listener untuk select item (PENTING) ---
+                // Saat memilih, split valuenya dan isi hidden input
+                row.querySelector('.item-select').addEventListener('change', function() {
+                    const [id, type] = this.value.split(':');
+                    const currentRow = this.closest('.item-row');
+                    currentRow.querySelector('input[name$="[item_id]"]').value = id || '';
+                    currentRow.querySelector('input[name$="[item_type]"]').value = type || '';
+                });
+                // Trigger change sekali (jika edit) untuk mengisi hidden input
+                if (itemData.itemable_id) {
+                    row.querySelector('.item-select').dispatchEvent(new Event('change'));
+                }
             }
 
-            // Tombol Tambah Item
             document.getElementById('btnAddItem').addEventListener('click', () => addItemRow());
 
-            // Tombol Tambah Request
             document.getElementById('btnTambahRequest').addEventListener('click', function() {
                 document.getElementById('modalRequestLabel').textContent = 'Buat Permintaan';
                 document.querySelector('.modal-icon i').className = 'bi bi-plus-circle';
@@ -260,28 +313,33 @@
             });
 
             // Tombol Edit Request
+            // Edit Request dengan withAuth
             document.getElementById('tabel-request').addEventListener('click', function(e) {
                 if (e.target.closest('.btnEditRequest')) {
                     let btn = e.target.closest('.btnEditRequest');
-                    let id = btn.getAttribute('data-id');
-                    let note = btn.getAttribute('data-note');
-                    let items = JSON.parse(btn.getAttribute('data-items') || '[]');
+                    withAuth(function() {
+                        let id = btn.getAttribute('data-id');
+                        let note = btn.getAttribute('data-note');
+                        let items = JSON.parse(btn.getAttribute('data-items') || '[]');
 
-                    document.getElementById('modalRequestLabel').textContent = 'Edit Permintaan';
-                    document.querySelector('.modal-icon i').className = 'bi bi-pencil-square';
-                    document.getElementById('request_id').value = id;
-                    document.getElementById('request_note').value = note || '';
-                    document.getElementById('formRequestAlert').innerHTML = '';
-                    document.getElementById('items-container').innerHTML = '';
+                        document.getElementById('modalRequestLabel').textContent =
+                        'Edit Permintaan';
+                        document.querySelector('.modal-icon i').className = 'bi bi-pencil-square';
+                        document.getElementById('request_id').value = id;
+                        document.getElementById('request_note').value = note || '';
+                        document.getElementById('formRequestAlert').innerHTML = '';
+                        document.getElementById('items-container').innerHTML = '';
 
-                    if (items.length === 0) {
-                        addItemRow();
-                    } else {
-                        items.forEach(item => addItemRow(item.ingredient_id, item.requested_quantity));
-                    }
+                        if (items.length === 0) {
+                            addItemRow();
+                        } else {
+                            items.forEach(item => addItemRow(item.ingredient_id, item
+                                .requested_quantity));
+                        }
 
-                    var modal = new bootstrap.Modal(document.getElementById('modalRequest'));
-                    modal.show();
+                        var modal = new bootstrap.Modal(document.getElementById('modalRequest'));
+                        modal.show();
+                    });
                 }
             });
 
@@ -346,59 +404,65 @@
                     });
             });
 
-            // Tombol Hapus Request
+            // Tombol Hapus Request dengan withAuth
             document.getElementById('tabel-request').addEventListener('click', function(e) {
                 if (e.target.closest('.btnHapusRequest')) {
                     let btn = e.target.closest('.btnHapusRequest');
-                    let id = btn.getAttribute('data-id');
-                    let url = document.getElementById('tabel-request').getAttribute('data-url').replace(
-                        /0$/, id);
+                    withAuth(function() {
+                        let id = btn.getAttribute('data-id');
+                        let url = document.getElementById('tabel-request').getAttribute('data-url')
+                            .replace(
+                                /0$/, id);
 
-                    Swal.fire({
-                        title: 'Yakin ingin menghapus?',
-                        text: "Data permintaan ini akan dihapus permanen!",
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonColor: '#d33',
-                        cancelButtonText: 'Batal',
-                        confirmButtonText: 'Ya, hapus!'
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            showLoading('Menghapus data permintaan...');
-                            fetch(url, {
-                                    method: 'DELETE',
-                                    headers: {
-                                        'X-Requested-With': 'XMLHttpRequest',
-                                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                                        'Accept': 'application/json'
-                                    }
-                                })
-                                .then(async response => {
-                                    hideLoading();
-                                    let data;
-                                    try {
-                                        data = await response.json();
-                                    } catch (err) {
-                                        data = {
-                                            status: 'error',
-                                            message: 'Gagal parsing response server.'
-                                        };
-                                    }
-                                    if (response.ok && data.status !== 'error') {
-                                        Swal.fire('Terhapus!', data.message, 'success')
-                                            .then(() => location.reload());
-                                    } else {
-                                        Swal.fire('Gagal', data.message ||
+                        Swal.fire({
+                            title: 'Yakin ingin menghapus?',
+                            text: "Data permintaan ini akan dihapus permanen!",
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonColor: '#d33',
+                            cancelButtonText: 'Batal',
+                            confirmButtonText: 'Ya, hapus!'
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                showLoading('Menghapus data permintaan...');
+                                fetch(url, {
+                                        method: 'DELETE',
+                                        headers: {
+                                            'X-Requested-With': 'XMLHttpRequest',
+                                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                            'Accept': 'application/json'
+                                        }
+                                    })
+                                    .then(async response => {
+                                        hideLoading();
+                                        let data;
+                                        try {
+                                            data = await response.json();
+                                        } catch (err) {
+                                            data = {
+                                                status: 'error',
+                                                message: 'Gagal parsing response server.'
+                                            };
+                                        }
+                                        if (response.ok && data.status !==
+                                            'error') {
+                                            Swal.fire('Terhapus!', data.message,
+                                                    'success')
+                                                .then(() => location.reload());
+                                        } else {
+                                            Swal.fire('Gagal', data.message ||
+                                                'Terjadi kesalahan saat menghapus data.',
+                                                'error');
+                                        }
+                                    })
+                                    .catch(error => {
+                                        hideLoading();
+                                        Swal.fire('Gagal',
                                             'Terjadi kesalahan saat menghapus data.',
                                             'error');
-                                    }
-                                })
-                                .catch(error => {
-                                    hideLoading();
-                                    Swal.fire('Gagal', 'Terjadi kesalahan saat menghapus data.',
-                                        'error');
-                                });
-                        }
+                                    });
+                            }
+                        });
                     });
                 }
             });

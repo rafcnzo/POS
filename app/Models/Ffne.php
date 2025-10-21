@@ -19,6 +19,7 @@ class Ffne extends Model
         'harga',
         'satuan_ffne',
         'kondisi_ffne',
+        'stock',
     ];
 
     /**
@@ -29,5 +30,10 @@ class Ffne extends Model
     public function extras(): HasMany
     {
         return $this->hasMany(Extra::class, 'ffne_id');
+    }
+
+    public function storeRequestItems()
+    {
+        return $this->morphMany(StoreRequestItem::class, 'itemable');
     }
 }

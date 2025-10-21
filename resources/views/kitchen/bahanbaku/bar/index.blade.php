@@ -12,7 +12,7 @@
                         </div>
                         <div>
                             <h1 class="page-title">Manajemen Bahan Baku</h1>
-                            <p class="page-subtitle">Kelola data bahan baku dan stok gudang</p>
+                            <p class="page-subtitle">Kelola data bahan baku dan stok bar</p>
                         </div>
                     </div>
                     <button class="btn-add-primary" id="btnTambahBahan">
@@ -212,6 +212,7 @@
                                   id="bahan_minimum_stock" name="minimum_stock" placeholder="0" required>
                        </div>
                     </div>
+                    <input type="hidden" name="category" value="kitchen">
                     <div class="modal-footer custom-modal-footer">
                         <button type="button" class="btn-secondary-custom" data-bs-dismiss="modal">
                             <i class="bi bi-x"></i>
@@ -259,26 +260,28 @@
             // Tombol Edit Bahan
             document.getElementById('tabel-bahanbaku').addEventListener('click', function(e) {
                 if (e.target.closest('.btnEditBahan')) {
-                    let btn = e.target.closest('.btnEditBahan');
-                    let id = btn.getAttribute('data-id');
-                    let name = btn.getAttribute('data-name');
-                    let unit = btn.getAttribute('data-unit');
-                    let cost_price = btn.getAttribute('data-cost_price');
-                    let supplier_id = btn.getAttribute('data-supplier_id');
-                    let minimum_stock = btn.getAttribute('data-minimum_stock');
+                    withAuth(function() {
+                        let btn = e.target.closest('.btnEditBahan');
+                        let id = btn.getAttribute('data-id');
+                        let name = btn.getAttribute('data-name');
+                        let unit = btn.getAttribute('data-unit');
+                        let cost_price = btn.getAttribute('data-cost_price');
+                        let supplier_id = btn.getAttribute('data-supplier_id');
+                        let minimum_stock = btn.getAttribute('data-minimum_stock');
 
-                    document.getElementById('modalBahanLabel').textContent = 'Edit Bahan Baku';
-                    document.querySelector('.modal-icon i').className = 'bi bi-pencil-square';
-                    document.getElementById('bahan_id').value = id;
-                    document.getElementById('bahan_name').value = name;
-                    document.getElementById('bahan_unit').value = unit;
-                    document.getElementById('bahan_cost_price').value = cost_price;
-                    document.getElementById('bahan_supplier_id').value = supplier_id;
-                    document.getElementById('bahan_minimum_stock').value = minimum_stock;
-                    document.getElementById('formBahanAlert').innerHTML = '';
+                        document.getElementById('modalBahanLabel').textContent = 'Edit Bahan Baku';
+                        document.querySelector('.modal-icon i').className = 'bi bi-pencil-square';
+                        document.getElementById('bahan_id').value = id;
+                        document.getElementById('bahan_name').value = name;
+                        document.getElementById('bahan_unit').value = unit;
+                        document.getElementById('bahan_cost_price').value = cost_price;
+                        document.getElementById('bahan_supplier_id').value = supplier_id;
+                        document.getElementById('bahan_minimum_stock').value = minimum_stock;
+                        document.getElementById('formBahanAlert').innerHTML = '';
 
-                    var modal = new bootstrap.Modal(document.getElementById('modalBahan'));
-                    modal.show();
+                        var modal = new bootstrap.Modal(document.getElementById('modalBahan'));
+                        modal.show();
+                    });
                 }
             });
 
@@ -320,8 +323,7 @@
                         }
 
                         if (response.ok && data.status !== 'error') {
-                            Swal.fire('Berhasil', data.message, 'success').then(() => location
-                                .reload());
+                            Swal.fire('Berhasil', data.message, 'success').then(() => location.reload());
                         } else {
                             let pesan = 'Silakan periksa kembali isian Anda.';
                             if (data.errors) {
@@ -346,56 +348,58 @@
             // Tombol Hapus Bahan
             document.getElementById('tabel-bahanbaku').addEventListener('click', function(e) {
                 if (e.target.closest('.btnHapusBahan')) {
-                    let btn = e.target.closest('.btnHapusBahan');
-                    let id = btn.getAttribute('data-id');
-                    let url = document.getElementById('tabel-bahanbaku').getAttribute('data-url').replace(
-                        /0$/, id);
+                    withAuth(function() {
+                        let btn = e.target.closest('.btnHapusBahan');
+                        let id = btn.getAttribute('data-id');
+                        let url = document.getElementById('tabel-bahanbaku').getAttribute('data-url').replace(
+                            /0$/, id);
 
-                    Swal.fire({
-                        title: 'Yakin ingin menghapus?',
-                        text: "Data bahan baku ini akan dihapus permanen!",
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonColor: '#d33',
-                        cancelButtonText: 'Batal',
-                        confirmButtonText: 'Ya, hapus!'
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            showLoading('Menghapus data bahan baku...');
-                            fetch(url, {
-                                    method: 'DELETE',
-                                    headers: {
-                                        'X-Requested-With': 'XMLHttpRequest',
-                                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                                        'Accept': 'application/json'
-                                    }
-                                })
-                                .then(async response => {
-                                    hideLoading();
-                                    let data;
-                                    try {
-                                        data = await response.json();
-                                    } catch (err) {
-                                        data = {
-                                            status: 'error',
-                                            message: 'Gagal parsing response server.'
-                                        };
-                                    }
-                                    if (response.ok && data.status !== 'error') {
-                                        Swal.fire('Terhapus!', data.message, 'success')
-                                            .then(() => location.reload());
-                                    } else {
-                                        Swal.fire('Gagal', data.message ||
-                                            'Terjadi kesalahan saat menghapus data.',
+                        Swal.fire({
+                            title: 'Yakin ingin menghapus?',
+                            text: "Data bahan baku ini akan dihapus permanen!",
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonColor: '#d33',
+                            cancelButtonText: 'Batal',
+                            confirmButtonText: 'Ya, hapus!'
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                showLoading('Menghapus data bahan baku...');
+                                fetch(url, {
+                                        method: 'DELETE',
+                                        headers: {
+                                            'X-Requested-With': 'XMLHttpRequest',
+                                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                            'Accept': 'application/json'
+                                        }
+                                    })
+                                    .then(async response => {
+                                        hideLoading();
+                                        let data;
+                                        try {
+                                            data = await response.json();
+                                        } catch (err) {
+                                            data = {
+                                                status: 'error',
+                                                message: 'Gagal parsing response server.'
+                                            };
+                                        }
+                                        if (response.ok && data.status !== 'error') {
+                                            Swal.fire('Terhapus!', data.message, 'success')
+                                                .then(() => location.reload());
+                                        } else {
+                                            Swal.fire('Gagal', data.message ||
+                                                'Terjadi kesalahan saat menghapus data.',
+                                                'error');
+                                        }
+                                    })
+                                    .catch(error => {
+                                        hideLoading();
+                                        Swal.fire('Gagal', 'Terjadi kesalahan saat menghapus data.',
                                             'error');
-                                    }
-                                })
-                                .catch(error => {
-                                    hideLoading();
-                                    Swal.fire('Gagal', 'Terjadi kesalahan saat menghapus data.',
-                                        'error');
-                                });
-                        }
+                                    });
+                            }
+                        });
                     });
                 }
             });

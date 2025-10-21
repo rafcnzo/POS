@@ -213,9 +213,7 @@
                 if (e.target.closest('.btnHapusPenerimaan')) {
                     let btn = e.target.closest('.btnHapusPenerimaan');
                     let id = btn.getAttribute('data-id');
-                    let url = document.getElementById('tabel-penerimaanbarang').getAttribute('data-url')
-                        .replace(
-                            /0$/, id);
+                    let url = document.getElementById('tabel-penerimaanbarang').getAttribute('data-url').replace(/0$/, id);
 
                     Swal.fire({
                         title: 'Yakin ingin menghapus?',
@@ -227,40 +225,42 @@
                         confirmButtonText: 'Ya, hapus!'
                     }).then((result) => {
                         if (result.isConfirmed) {
-                            showLoading('Menghapus data penerimaan barang...');
-                            fetch(url, {
-                                    method: 'DELETE',
-                                    headers: {
-                                        'X-Requested-With': 'XMLHttpRequest',
-                                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                                        'Accept': 'application/json'
-                                    }
-                                })
-                                .then(async response => {
-                                    hideLoading();
-                                    let data;
-                                    try {
-                                        data = await response.json();
-                                    } catch (err) {
-                                        data = {
-                                            status: 'error',
-                                            message: 'Gagal parsing response server.'
-                                        };
-                                    }
-                                    if (response.ok && data.status !== 'error') {
-                                        Swal.fire('Terhapus!', data.message, 'success')
-                                            .then(() => location.reload());
-                                    } else {
-                                        Swal.fire('Gagal', data.message ||
-                                            'Terjadi kesalahan saat menghapus data.',
+                            withAuth(() => {
+                                showLoading('Menghapus data penerimaan barang...');
+                                fetch(url, {
+                                        method: 'DELETE',
+                                        headers: {
+                                            'X-Requested-With': 'XMLHttpRequest',
+                                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                            'Accept': 'application/json'
+                                        }
+                                    })
+                                    .then(async response => {
+                                        hideLoading();
+                                        let data;
+                                        try {
+                                            data = await response.json();
+                                        } catch (err) {
+                                            data = {
+                                                status: 'error',
+                                                message: 'Gagal parsing response server.'
+                                            };
+                                        }
+                                        if (response.ok && data.status !== 'error') {
+                                            Swal.fire('Terhapus!', data.message, 'success')
+                                                .then(() => location.reload());
+                                        } else {
+                                            Swal.fire('Gagal', data.message ||
+                                                'Terjadi kesalahan saat menghapus data.',
+                                                'error');
+                                        }
+                                    })
+                                    .catch(error => {
+                                        hideLoading();
+                                        Swal.fire('Gagal', 'Terjadi kesalahan saat menghapus data.',
                                             'error');
-                                    }
-                                })
-                                .catch(error => {
-                                    hideLoading();
-                                    Swal.fire('Gagal', 'Terjadi kesalahan saat menghapus data.',
-                                        'error');
-                                });
+                                    });
+                            });
                         }
                     });
                 }

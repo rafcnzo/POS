@@ -190,6 +190,48 @@
             }
         @endif
     </script>
+
+    <script>
+        window.correctAuthPassword = @json($globalAuthPassword ?? '');
+        function withAuth(actionToPerform) {
+            // Cek jika password kosong
+            if (!window.correctAuthPassword) {
+                Swal.fire('Otorisasi Gagal', 'Password otorisasi belum di-set di sistem.', 'error');
+                return; // Hentikan aksi
+            }
+
+            Swal.fire({
+                title: 'Otorisasi Diperlukan',
+                text: 'Masukkan password otorisasi untuk melanjutkan:',
+                input: 'password',
+                inputPlaceholder: 'Password...',
+                inputAttributes: {
+                    autocapitalize: 'off',
+                    autocorrect: 'off'
+                },
+                showCancelButton: true,
+                confirmButtonText: 'Otorisasi',
+                cancelButtonText: 'Batal',
+                showLoaderOnConfirm: true,
+                preConfirm: (password) => {
+                    // Cek password
+                    if (password === window.correctAuthPassword) {
+                        return true; // Password benar
+                    } else {
+                        Swal.showValidationMessage('Password otorisasi salah!');
+                        return false; // Password salah
+                    }
+                },
+                allowOutsideClick: () => !Swal.isLoading()
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Jika password benar (isConfirmed), jalankan aksi
+                    actionToPerform();
+                }
+                // Jika batal (isDismissed), tidak terjadi apa-apa
+            });
+        }
+    </script>
     @stack('script')
 </body>
 

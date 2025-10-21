@@ -1,0 +1,29 @@
+#invoice-POS {
+    width: 80mm;
+    max-width: 800px;
+    margin: 0 auto;
+    font-family: 'Arial', sans-serif;
+    font-size: 12px;
+    background: #fff;
+    padding: 0;
+}
+#invoice-POS #top, #invoice-POS #bot, #invoice-POS #table {
+    width: 100%;
+}
+#invoice-POS table {
+    width: 100%;
+    border-collapse: collapse;
+}
+#invoice-POS .item, #invoice-POS .Hours, #invoice-POS .Rate, #invoice-POS .payment {
+    text-align: left;
+    padding: 2px 0;
+}
+#invoice-POS td, #invoice-POS th {
+    word-break: break-word;
+}
+@media print {
+    #invoice-POS {
+        width: 80mm;
+        max-width: unset;
+    }
+}

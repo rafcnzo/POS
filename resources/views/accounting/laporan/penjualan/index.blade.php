@@ -276,7 +276,7 @@
                 if (filterDate !== '') {
                     const today = new Date();
                     const dateValue = new Date(filterDate);
-                    today.setHours(0,0,0,0);
+                    today.setHours(0, 0, 0, 0);
                     if (dateValue > today) {
                         Swal.fire({
                             title: 'Tanggal tidak valid!',
@@ -290,59 +290,100 @@
                 return true;
             }
 
-            function handleExportClick(event) {
-                event.preventDefault();
+            const btnPdf = document.getElementById('btnExportPdf');
+            if (btnPdf) {
+                btnPdf.addEventListener('click', function(event) {
+                    event.preventDefault();
 
-                if (!validateFilterInputs()) return;
+                    if (!validateFilterInputs()) return;
+                    const url = this.dataset.url;
+                    const format = this.dataset.format || 'PDF';
 
-                const link = event.currentTarget;
-                const url = link.dataset.url;
-                const format = link.dataset.format || 'file';
-
-                Swal.fire({
-                    title: `Ekspor Laporan ke ${format}?`,
-                    text: "Filter yang sedang aktif akan diterapkan pada file ekspor.",
-                    icon: 'question',
-                    showCancelButton: true,
-                    confirmButtonText: 'Ya, Ekspor!',
-                    cancelButtonText: 'Batal',
-                    confirmButtonColor: '#3085d6',
-                    cancelButtonColor: '#d33'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        Swal.fire({
-                            title: 'Mempersiapkan file...',
-                            text: 'Harap tunggu, file Anda sedang dibuat.',
-                            icon: 'info',
-                            timer: 1800, // lebih pendek supaya UX responsif 
-                            timerProgressBar: true,
-                            showConfirmButton: false,
-                            allowOutsideClick: false,
-                            willClose: () => {
-                                Swal.fire({
-                                    title: 'Berhasil!',
-                                    text: `File laporan ${format.toUpperCase()} sedang diunduh.`,
-                                    icon: 'success',
-                                    timer: 1100,
-                                    showConfirmButton: false
-                                });
-                                setTimeout(function() {
+                    Swal.fire({
+                        title: `Ekspor Laporan ke ${format}?`,
+                        text: "Filter yang sedang aktif akan diterapkan pada file ekspor.",
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Ya, Ekspor!',
+                        cancelButtonText: 'Batal',
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            Swal.fire({
+                                title: 'Mempersiapkan file...',
+                                text: 'Harap tunggu, file PDF Anda sedang dibuat.',
+                                icon: 'info',
+                                timer: 2000, // Waktu tunggu
+                                timerProgressBar: true,
+                                showConfirmButton: false,
+                                allowOutsideClick: false,
+                                willClose: () => {
+                                    // 5. Lakukan redirect untuk download
                                     window.location.href = url;
-                                }, 900); // agar swal success muncul dulu sebentar
-                            }
-                        });
-                    }
+                                }
+                            });
+                        }
+                    });
                 });
             }
 
-            const btnExcel = document.getElementById('btnExportExcel');
-            const btnPdf = document.getElementById('btnExportPdf');
 
+            // --- Tombol EXCEL (SheetJS) ---
+            const btnExcel = document.getElementById('btnExportExcel');
             if (btnExcel) {
-                btnExcel.addEventListener('click', handleExportClick);
-            }
-            if (btnPdf) {
-                btnPdf.addEventListener('click', handleExportClick);
+                btnExcel.addEventListener('click', function(event) {
+                    event.preventDefault();
+                    if (!validateFilterInputs()) return;
+
+                    const url = this.dataset.url;
+                    const btn = this;
+                    const originalHtml = btn.innerHTML;
+
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="bi bi-arrow-repeat bx-spin"></i> Loading...';
+                    if (typeof showLoading === 'function') showLoading('Mengambil data laporan...');
+
+                    fetch(url, {
+                            headers: {
+                                'Accept': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'X-CSRF-TOKEN': '{{ csrf_token() }}' // Pastikan token ada jika perlu
+                            }
+                        })
+                        .then(response => {
+                            if (!response.ok) {
+                                return response.json().then(err => {
+                                    throw new Error(err.message || 'Gagal mengambil data');
+                                });
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (typeof hideLoading === 'function') hideLoading();
+
+                            if (data.status === 'success' && Array.isArray(data.salesData) && data
+                                .salesData.length > 0) {
+                                const ws = XLSX.utils.json_to_sheet(data.salesData);
+                                const wb = XLSX.utils.book_new();
+                                XLSX.utils.book_append_sheet(wb, ws, "Laporan Penjualan"); // Nama Sheet
+
+                                XLSX.writeFile(wb, data.fileName || "laporan-penjualan.xlsx");
+
+                            } else if (data.salesData && data.salesData.length === 0) {
+                                Swal.fire('Data Kosong', 'Tidak ada data untuk diekspor.', 'info');
+                            } else {
+                                throw new Error(data.message || 'Format data tidak sesuai');
+                            }
+                        })
+                        .catch(error => {
+                            if (typeof hideLoading === 'function') hideLoading();
+                            console.error('Export Excel Error:', error);
+                            Swal.fire('Gagal Ekspor', error.message, 'error');
+                        })
+                        .finally(() => {
+                            btn.disabled = false;
+                            btn.innerHTML = originalHtml;
+                        });
+                });
             }
         });
     </script>

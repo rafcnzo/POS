@@ -11,7 +11,8 @@ class StoreRequest extends Model
 
     public function items()
     {
-        return $this->hasMany(StoreRequestItem::class);
+        return $this->hasMany(StoreRequestItem::class)
+        ->with('itemable');
     }
 
     public function issuer()

@@ -17,19 +17,17 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage as FacadesStorage;
 use Illuminate\Support\Str;
 use Native\Laravel\Facades\Window;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class AdminController extends Controller
 {
     public function index()
     {
-        // Data jumlah bahan baku
         $totalIngredients = Ingredient::count();
-        // Data PO menunggu
-        $pendingPO = PurchaseOrder::where('status', 'pending')->count();
-        // Total supplier
-        $totalSuppliers = Supplier::count();
+        $pendingPO        = PurchaseOrder::where('status', 'pending')->count();
+        $totalSuppliers   = Supplier::count();
 
-        // Hitung total penjualan bulan ini
         $currentMonth  = now()->month;
         $currentYear   = now()->year;
         $previousMonth = now()->subMonth()->month;
@@ -39,12 +37,10 @@ class AdminController extends Controller
             ->whereYear('created_at', $currentYear)
             ->sum('total_amount');
 
-        // Hitung total penjualan bulan lalu
         $totalSalesLastMonth = Sale::whereMonth('created_at', $previousMonth)
             ->whereYear('created_at', $previousYear)
             ->sum('total_amount');
 
-        // Hitung pertumbuhan penjualan (sales growth) dalam persen
         if ($totalSalesLastMonth > 0) {
             $salesGrowth = number_format((($totalSales - $totalSalesLastMonth) / $totalSalesLastMonth) * 100, 1) . '%';
         } elseif ($totalSales > 0) {
@@ -53,19 +49,16 @@ class AdminController extends Controller
             $salesGrowth = '0%';
         }
 
-        // Total transaksi bulan ini
         $totalTransactions = Sale::whereMonth('created_at', now()->month)
             ->whereYear('created_at', now()->year)
             ->count();
 
-        // Total transaksi bulan lalu
         $previousMonth              = now()->subMonth()->month;
         $previousYear               = now()->subMonth()->year;
         $totalTransactionsLastMonth = Sale::whereMonth('created_at', $previousMonth)
             ->whereYear('created_at', $previousYear)
             ->count();
 
-        // Pertumbuhan transaksi (transactions growth) dalam persen
         if ($totalTransactionsLastMonth > 0) {
             $transactionsGrowth = number_format((($totalTransactions - $totalTransactionsLastMonth) / $totalTransactionsLastMonth) * 100, 1) . '%';
         } elseif ($totalTransactions > 0) {
@@ -83,7 +76,6 @@ class AdminController extends Controller
             );
         }
 
-        // Cari 5 menu (MenuItem) terlaris berdasarkan total quantity SaleItem bulan ini
         $topProductsRaw = SaleItem::selectRaw('menu_item_id, SUM(quantity) as total_sold, SUM(subtotal) as total_revenue')
             ->whereHas('sale', function ($q) {
                 $q->whereMonth('created_at', now()->month)
@@ -324,6 +316,91 @@ class AdminController extends Controller
         }
     }
 
+    public function rolesIndex()
+    {
+        $roles       = Role::withCount('users', 'permissions')->get();
+        $permissions = Permission::all()->sortBy('name');
+
+        return view('admin.roles.index', compact('roles', 'permissions'));
+    }
+
+    public function rolesSubmit(Request $request)
+    {
+        $roleId = $request->input('id');
+
+        $validated = $request->validate([
+            'name'          => ['required', 'string', 'max:100', Rule::unique('roles', 'name')->ignore($roleId)],
+            'permissions'   => 'nullable|array',
+            'permissions.*' => 'string|exists:permissions,name',
+        ], [
+            'name.required'        => 'Nama role wajib diisi.',
+            'name.unique'          => 'Nama role ini sudah ada.',
+            'permissions.*.exists' => 'Permission yang dipilih tidak valid.',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $role = null;
+            if ($roleId) {
+                $role = Role::findOrFail($roleId);
+                if ($role->name === 'Super Admin' && $validated['name'] !== 'Super Admin') {
+                    return response()->json(['status' => 'error', 'message' => 'Nama role Super Admin tidak boleh diubah.'], 403);
+                }
+                $role->update(['name' => $validated['name']]);
+                $message = 'Role berhasil diperbarui.';
+            } else {
+                $role    = Role::create(['name' => $validated['name']]);
+                $message = 'Role baru berhasil ditambahkan.';
+            }
+
+            if ($role->name !== 'Super Admin') {
+                $role->syncPermissions($validated['permissions'] ?? []);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => $message,
+            ]);
+
+        } catch (Throwable $e) {
+            DB::rollBack();
+            \Log::error("Error saving role: " . $e->getMessage());
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function rolesDestroy(Role $role)
+    {
+        try {
+            if ($role->name === 'Super Admin') {
+                return response()->json(['status' => 'error', 'message' => 'Role Super Admin tidak bisa dihapus.'], 403);
+            }
+
+            if ($role->users()->count() > 0) {
+                return response()->json(['status' => 'error', 'message' => 'Role tidak bisa dihapus karena masih digunakan oleh user.'], 422);
+            }
+
+            $role->delete();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Role berhasil dihapus.',
+            ]);
+
+        } catch (Throwable $e) {
+            \Log::error("Error deleting role: " . $e->getMessage());
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
     public function settings()
     {
         $settings = Setting::pluck('value', 'key');
@@ -533,8 +610,8 @@ class AdminController extends Controller
             'nama'           => 'required|string',
             'department'     => 'nullable|string',
             'position'       => 'nullable|string',
-            'alamat'         => 'nullable|string',        
-            'no_hp'          => 'nullable|string|max:20', 
+            'alamat'         => 'nullable|string',
+            'no_hp'          => 'nullable|string|max:20',
             'kontak_darurat' => 'nullable|string|max:100',
         ]);
 
