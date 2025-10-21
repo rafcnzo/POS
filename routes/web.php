@@ -76,6 +76,11 @@ Route::middleware(['auth'])->prefix('acc')->name('acc.')->group(function () {
     // Routes Laporan Stok
     Route::get('/laporan/stok-mutasi', [AccountingController::class, 'stockMovementReport'])->name('laporan-stok-mutasi');
     Route::get('/laporan/stok-mutasi/export/{type}', [AccountingController::class, 'stockMovementExport'])->name('laporan-stok-mutasi.export');
+
+    // Routes Laporan Laba Rugi
+    Route::get('/laporan/laba-rugi', [AccountingController::class, 'profitAndLossReport'])->name('laporan-labarugi');
+    Route::get('/laporan/laba-rugi/download/excel', [AccountingController::class, 'profitAndLossDownloadExcel'])
+    ->name('laporan-labarugi.download.excel');
 });
 
 Route::middleware(['auth'])->prefix('prc')->name('prc.')->group(function () {
@@ -157,7 +162,7 @@ Route::middleware(['auth'])->prefix('cashier')->name('cashier.')->group(function
     Route::get('/payment/{sale}', [CashierController::class, 'showPaymentPage'])->name('payment.page');
     Route::post('/payment/{sale}/process', [CashierController::class, 'processPayment'])->name('payment.process');
     Route::post('/payment/{sale}/void', [CashierController::class, 'voidTransaction'])->name('payment.void');
-    
+
     Route::get('/', [CashierController::class, 'Index'])->name('index');
     Route::post('/submit', [CashierController::class, 'Submit'])->name('submit');
     Route::get('/history', [CashierController::class, 'History'])->name('history');

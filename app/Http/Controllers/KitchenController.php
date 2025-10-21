@@ -261,14 +261,14 @@ class KitchenController extends Controller
             'note'                   => 'nullable|string',
             'items'                  => 'required|array|min:1',
             // Validasi item_id dan item_type baru
-            'items.*.item_id'        => 'required|integer', 
+            'items.*.item_id'        => 'required|integer',
             'items.*.item_type'      => ['required', \Illuminate\Validation\Rule::in(['App\Models\Ingredient', 'App\Models\Ffne'])], // Validasi tipe
             'items.*.requested_quantity' => 'required|numeric|min:0.01',
         ], [
-             'items.required' => 'Minimal harus ada 1 item barang.',
-             'items.*.item_id.required' => 'Item barang wajib dipilih.',
-             'items.*.item_type.required' => 'Tipe item tidak valid.',
-             'items.*.requested_quantity.required' => 'Jumlah (Qty) wajib diisi.',
+            'items.required' => 'Minimal harus ada 1 item barang.',
+            'items.*.item_id.required' => 'Item barang wajib dipilih.',
+            'items.*.item_type.required' => 'Tipe item tidak valid.',
+            'items.*.requested_quantity.required' => 'Jumlah (Qty) wajib diisi.',
         ]);
         // --- AKHIR PERBAIKAN VALIDASI ---
 
@@ -287,9 +287,9 @@ class KitchenController extends Controller
         ];
 
         try { // <-- Tambahkan try-catch-DB::transaction untuk keamanan data
-            
+
             $storeRequest = \DB::transaction(function() use ($request, $storeRequestData, $validated) {
-                
+
                 $storeRequest = \App\Models\StoreRequest::updateOrCreate(
                     ['id' => $request->id],
                     $storeRequestData

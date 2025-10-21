@@ -1,26 +1,34 @@
 <?php
 namespace App\Http\Controllers;
 
+use App\Exports\ProfitAndLossExport;
 use App\Exports\SalesReportExport;
 use App\Exports\StockMovementExport;
+use App\Models\EnergyCost;
+use App\Models\Extra;
 use App\Models\Ffne;
+use App\Models\FfneStockAdj;
 use App\Models\Ingredient;
 use App\Models\Karyawan;
 use App\Models\Payroll;
 use App\Models\PurchaseOrder;
 use App\Models\Sale;
+use App\Models\SaleItem;
 use App\Models\Setting;
 use App\Models\Supplier;
 use App\Models\SupplierPayment;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
+use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Log;
 use Maatwebsite\Excel\Facades\Excel;
+use Throwable;
 
 class AccountingController extends Controller
 {
@@ -82,8 +90,8 @@ class AccountingController extends Controller
                 'message' => $message,
                 'data'    => $supplier,
             ]);
-        } catch (\Exception $e) {
-            \Log::error("Error saving supplier: " . $e->getMessage());
+        } catch (Exception $e) {
+            Log::error("Error saving supplier: " . $e->getMessage());
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Terjadi kesalahan saat menyimpan data supplier.',
@@ -131,11 +139,11 @@ class AccountingController extends Controller
                 $po = PurchaseOrder::with('supplier')->findOrFail($validated['purchase_order_id']);
 
                 if ($po->payment_type !== PurchaseOrder::PAYMENT_TEMPO) {
-                    throw new \Exception("PO #{$po->po_number} bukan merupakan PO Tempo.");
+                    throw new Exception("PO #{$po->po_number} bukan merupakan PO Tempo.");
                 }
 
                 if ($po->payment_status === PurchaseOrder::STATUS_LUNAS) {
-                    throw new \Exception("PO #{$po->po_number} sudah lunas.");
+                    throw new Exception("PO #{$po->po_number} sudah lunas.");
                 }
 
                 // Ambil total pembayaran yang sudah masuk di DB (dari tabel supplier_payments, bukan hanya field di PO)
@@ -145,7 +153,7 @@ class AccountingController extends Controller
                 $outstanding = (float) max($po->total_amount - $alreadyPaid, 0);
 
                 if ($payAmount > $outstanding) {
-                    throw new \Exception("Jumlah bayar melebihi sisa tagihan.");
+                    throw new Exception("Jumlah bayar melebihi sisa tagihan.");
                 }
 
                 $filePath = null;
@@ -176,7 +184,7 @@ class AccountingController extends Controller
                 if ($po->supplier) {
                     Supplier::where('id', $po->supplier_id)->increment('credit_limit', $payAmount);
                 } else {
-                    \Log::warning("Supplier tidak ditemukan saat mencoba mengembalikan limit kredit untuk PO ID: {$po->id}");
+                    Log::warning("Supplier tidak ditemukan saat mencoba mengembalikan limit kredit untuk PO ID: {$po->id}");
                 }
             });
 
@@ -184,8 +192,8 @@ class AccountingController extends Controller
                 'status'  => 'success',
                 'message' => 'Pembayaran supplier berhasil dicatat.',
             ]);
-        } catch (\Exception $e) {
-            \Log::error("Error saving supplier payment: " . $e->getMessage());
+        } catch (Exception $e) {
+            Log::error("Error saving supplier payment: " . $e->getMessage());
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Gagal mencatat pembayaran: ' . $e->getMessage(),
@@ -340,7 +348,7 @@ class AccountingController extends Controller
         $dataForExport = $sales->map(function ($sale) {
             return [
                 'No Transaksi'     => $sale->transaction_code,
-                'Tanggal'          => $sale->created_at ? \Carbon\Carbon::parse($sale->created_at)->format('Y-m-d H:i:s') : null,
+                'Tanggal'          => $sale->created_at ? Carbon::parse($sale->created_at)->format('Y-m-d H:i:s') : null,
                 'Nama Kasir'       => optional($sale->user)->name,
                 'Sub Total'        => (float) $sale->subtotal,
                 'Diskon'           => (float) $sale->discount_amount,
@@ -718,7 +726,7 @@ class AccountingController extends Controller
             }
 
             return response()->json(['status' => 'success', 'message' => $message]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
@@ -735,7 +743,7 @@ class AccountingController extends Controller
             $payroll->delete();
 
             return response()->json(['status' => 'success', 'message' => 'Data gaji berhasil dihapus.']);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
@@ -754,8 +762,156 @@ class AccountingController extends Controller
             }
 
             return Storage::download($payroll->file_bukti);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             abort(404, 'File tidak dapat diakses.');
         }
+    }
+
+    private function getProfitAndLossData(string $startDate, string $endDate)
+    {
+        $alert = [];
+        // 1. Hitung Total Pendapatan (Revenue)
+        $totalRevenue = Sale::whereBetween('created_at', [$startDate, $endDate])
+            ->where('status', 'completed')
+            ->sum('total_amount');
+
+        // 2. Hitung Total Harga Pokok Penjualan (HPP/COGS)
+        $saleItems = SaleItem::whereHas('sale', function ($query) use ($startDate, $endDate) {
+            $query->whereBetween('created_at', [$startDate, $endDate])
+                ->where('status', 'completed');
+        })->with('menuItem.ingredients.purchaseOrderItems')->get();
+
+        $totalHpp = $saleItems->sum(function ($saleItem) use (&$alert) {
+            if (!$saleItem->menuItem) {
+                $message = "Sale Item ID {$saleItem->id} tidak memiliki menu terkait";
+                $alert[] = $message;
+                return 0;
+            }
+            if ($saleItem->menuItem->ingredients->isEmpty()) {
+                $message = "Menu '{$saleItem->menuItem->name}' tidak memiliki bahan baku";
+                $alert[] = $message;
+            }
+            $costPerMenuItem = $saleItem->menuItem->ingredients->sum(function ($ingredient) use (&$alert, $saleItem) {
+                $averageCost = $ingredient->getAverageCost();
+                if ($averageCost == 0) {
+                    $message = "Bahan '{$ingredient->name}' pada menu '{$saleItem->menuItem->name}' belum ada harga pembelian";
+                    $alert[] = $message;
+                }
+                $quantityUsed = $ingredient->pivot->quantity;
+                return $averageCost * $quantityUsed;
+            });
+            return $costPerMenuItem * $saleItem->quantity;
+        });
+
+        // 3. Hitung Total Beban Operasional (Operational Expenses)
+        // A. Payroll
+        $startMonth = Carbon::parse($startDate)->format('Y-m');
+        $endMonth = Carbon::parse($endDate)->format('Y-m');
+        $totalPayroll = Payroll::whereRaw("
+            printf('%04d-%02d', tahun, bulan) BETWEEN ? AND ?
+        ", [$startMonth, $endMonth])
+        ->sum('nominal_gaji');
+
+        // B. Biaya Pembelian Aset FFNE
+        $totalFfnePurchaseExpense = Ffne::whereBetween('tanggal_perolehan', [$startDate, $endDate])
+            ->sum('harga');
+
+        // C. Beban Penyesuaian FFNE (Stock Adjustment OUT) - Tetap ada
+        $totalFfneAdjustment = FfneStockAdj::where('type', 'out')
+            ->whereBetween(DB::raw('DATE(created_at)'), [$startDate, $endDate])
+            ->with('ffne')
+            ->get()
+            ->sum(function ($adj) {
+                return $adj->ffne ? ($adj->ffne->harga * $adj->qty) : 0;
+            });
+
+        // D. Beban Energi
+        $totalEnergyCost = EnergyCost::whereBetween('period', [$startDate, $endDate])
+            ->sum('cost');
+
+        // E. Beban Tambahan (Extras)
+        $totalExtrasCost = Extra::whereNull('reference_id')
+            ->whereBetween('tanggal', [$startDate, $endDate])
+            ->sum('harga');
+
+        // 4. Kalkulasi Laba
+        $grossProfit = $totalRevenue - $totalHpp;
+
+        $totalOperationalExpenses = $totalPayroll
+            + $totalFfnePurchaseExpense
+            + $totalEnergyCost
+            + $totalExtrasCost
+            + $totalFfneAdjustment;
+        $netProfit = $grossProfit - $totalOperationalExpenses;
+
+        // 5. Susun detail beban
+        $expenseDetails = [];
+        if ($totalPayroll > 0) {
+            $expenseDetails[] = ['label' => 'Beban Gaji (Payroll)', 'value' => $totalPayroll];
+        }
+        // +++ DITAMBAHKAN +++
+        if ($totalFfnePurchaseExpense > 0) {
+            $expenseDetails[] = ['label' => 'Beban Pembelian Aset (FF&E)', 'value' => $totalFfnePurchaseExpense];
+        }
+        if ($totalEnergyCost > 0) {
+            $expenseDetails[] = ['label' => 'Beban Energi', 'value' => $totalEnergyCost];
+        }
+        if ($totalExtrasCost > 0) {
+            $expenseDetails[] = ['label' => 'Beban Tambahan (Extras)', 'value' => $totalExtrasCost];
+        }
+        if ($totalFfneAdjustment > 0) {
+            $expenseDetails[] = ['label' => 'Beban Penyesuaian Stok FFNE', 'value' => $totalFfneAdjustment];
+        }
+
+        // 6. Return data
+        return [
+            'revenue' => ['label' => 'Total Pendapatan', 'value' => $totalRevenue],
+            'hpp' => ['label' => 'Total HPP', 'value' => $totalHpp, 'has_alert' => count($alert) > 0],
+            'alert' => array_unique($alert),
+            'gross_profit' => ['label' => 'Laba Kotor', 'value' => $grossProfit],
+            'expenses' => [
+                'label' => 'Total Beban Operasional',
+                'value' => $totalOperationalExpenses,
+                'details' => $expenseDetails
+            ],
+
+            'net_profit' => ['label' => 'Laba Bersih', 'value' => $netProfit]
+        ];
+    }
+
+    public function profitAndLossReport(Request $request)
+    {
+        // Validasi dan ambil tanggal
+        $validated = $request->validate([
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date|after_or_equal:start_date',
+        ]);
+
+        $startDate = $validated['start_date'] ?? now()->startOfMonth()->toDateString();
+        $endDate   = $validated['end_date'] ?? now()->endOfMonth()->toDateString();
+
+        $reportTitle = "Laporan Laba Rugi Periode " . Carbon::parse($startDate)->translatedFormat('d F Y') . " - " . Carbon::parse($endDate)->translatedFormat('d F Y');
+
+        // Panggil fungsi private untuk mendapatkan data yang SUDAH DIFORMAT
+        $summary = $this->getProfitAndLossData($startDate, $endDate);
+
+        $filters = ['start_date' => $startDate, 'end_date' => $endDate];
+
+        // Langsung kirim ke view, tidak perlu format ulang
+        return view('accounting.laporan.laba_rugi.index', compact('summary', 'reportTitle', 'filters'));
+    }
+
+    public function profitAndLossDownloadExcel(Request $request)
+    {
+        $validated = $request->validate([
+            'start_date' => 'required|date',
+            'end_date'   => 'required|date|after_or_equal:start_date',
+        ]);
+
+        $startDate = $validated['start_date'];
+        $endDate   = $validated['end_date'];
+
+        $fileName = 'laporan-laba-rugi-' . $startDate . '-sampai-' . $endDate . '.xlsx';
+        return Excel::download(new ProfitAndLossExport($startDate, $endDate), $fileName);
     }
 }

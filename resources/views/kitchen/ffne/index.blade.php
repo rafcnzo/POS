@@ -385,7 +385,7 @@
             const extrasInfo = document.getElementById('extrasInfo');
             const modalStockAdj = new bootstrap.Modal(document.getElementById('modalStockAdj'));
             const formStockAdj = document.getElementById('formStockAdj');
-            const alertStockAdj = document.getElementById('formStockAdjAlert'); 
+            const alertStockAdj = document.getElementById('formStockAdjAlert');
             const btnSimpanAdj = document.getElementById('btnSimpanAdj');
 
             let currentFfneId = null;
