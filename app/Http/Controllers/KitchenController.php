@@ -10,9 +10,11 @@ use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Modifier;
 use App\Models\ModifierGroup;
+use App\Models\Setting;
 use App\Models\StoreRequest;
 use App\Models\StoreRequestItem;
 use App\Models\Supplier;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -338,8 +340,16 @@ class KitchenController extends Controller
 
     public function storerequestPrint($id)
     {
-        $storeRequest = StoreRequest::with(['items.ingredient', 'issuer'])->findOrFail($id);
-        return view('kitchen.storerequest._print', compact('storeRequest'));
+        $storeRequest = StoreRequest::with([
+            'items.ingredient',
+            'issuer'
+        ])->findOrFail($id);
+        $settings = Setting::pluck('value', 'key')->toArray();
+        $pdf = Pdf::loadView(
+            'kitchen.storerequest._print',
+            compact('storeRequest', 'settings')
+        )->setPaper('a4', 'landscape');
+        return $pdf->stream('store_request_' . $storeRequest->request_number . '.pdf');
     }
 
     public function modifierGroupStore(Request $request)

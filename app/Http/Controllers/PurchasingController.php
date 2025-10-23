@@ -8,7 +8,9 @@ use App\Models\PurchaseOrderItem;
 use App\Models\Setting;
 use App\Models\StoreRequest;
 use App\Models\Supplier;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
+use File;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -260,10 +262,12 @@ class PurchasingController extends Controller
             'items.ingredient',
             'storeRequest',
         ])->findOrFail($id);
-
-        $setting = Setting::all();
-
-        return view('purchasing.purchase_orders._print', compact('purchaseOrder', 'setting'));
+        $settings = Setting::pluck('value', 'key')->toArray();
+        $pdf = Pdf::loadView(
+            'purchasing.purchase_orders._print',
+            compact('purchaseOrder', 'settings')
+        )->setPaper('a4', 'landscape');
+        return $pdf->stream('purchase_order_' . $purchaseOrder->po_number . '.pdf');
     }
 
     public function penerimaanbarangIndex()

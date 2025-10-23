@@ -1,187 +1,330 @@
 <!DOCTYPE html>
 <html lang="id">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Print Store Requisition - {{ $storeRequest->request_number }}</title>
+    <title>Store Requisition Form - {{ $storeRequest->request_number ?? 'N/A' }}</title>
     <style>
+        @page {
+            size: A4 landscape;
+            margin: 10mm 10mm 10mm 15mm;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: Arial, sans-serif;
-            font-size: 12px;
-            margin: 0;
+            padding: 10px;
+            background: white;
         }
+
         .container {
-            width: 95%;
-            margin: 20px auto;
+            width: 100%;
+            margin: 0 auto;
+            background: white;
         }
-        h2 {
-            text-align: center;
-            margin-bottom: 20px;
+
+        /* Header Section */
+        .header {
+            width: 100%;
+            margin-bottom: 8px;
+            position: relative;
+            height: 65px;
+        }
+
+        .logo-section {
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+
+        .logo {
+            width: 60px;
+            height: 60px;
+            float: left;
+            margin-right: 12px;
+        }
+
+        .logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            padding: 5px;
+        }
+
+        .company-name {
+            float: left;
+            font-size: 20px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+            line-height: 1.3;
+            padding-top: 10px;
+            max-width: 120px;
+            word-wrap: break-word;
+        }
+
+        .form-number {
+            position: relative;
+            right: 0;
+            top: 10px;
+            float: right;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .clear {
+            clear: both;
+        }
+
+        .form-title {
             font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            margin-top: 5px;
         }
+
+        .info-line {
+            width: 100%;
+            margin-bottom: 12px;
+            font-size: 13px;
+            font-weight: bold;
+        }
+
+        .info-row {
+            width: 100%;
+        }
+
+        .dept-section {
+            width: 48%;
+            float: left;
+        }
+
+        .date-section {
+            width: 48%;
+            float: right;
+        }
+
+        .dept-section,
+        .date-section {
+            line-height: 1.5;
+        }
+
+        .label-text {
+            display: inline;
+            margin-right: 3px;
+        }
+
+        .underline {
+            display: inline-block;
+            border-bottom: 1px solid #000;
+            min-width: 453px;
+            padding-bottom: 2px;
+        }
+
+        /* Table */
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 5px;
-        }
-        th, td {
-            border: 1px solid black;
-            padding: 8px;
-            text-align: left;
-            vertical-align: top;
-        }
-        .header-table td {
-            border: none;
-        }
-        .items-table th {
-            text-align: center;
-            font-weight: bold;
-        }
-        .items-table td {
-            height: 25px; /* Memberi tinggi pada baris kosong */
-        }
-        .approval-table td {
-            border: none;
-            padding: 4px 8px;
-        }
-        .text-center {
-            text-align: center;
-        }
-        .no-border {
-            border: none;
-        }
-        .remarks-header {
-            font-weight: bold;
-            border-right: none;
-        }
-        .remarks-content {
-            border-left: none;
+            margin-bottom: 25px;
         }
 
-        /* Styling untuk tombol print agar tidak ikut tercetak */
-        .print-button-container {
-            text-align: center;
-            margin-bottom: 20px;
+        .main-table {
+            border: 1.5px solid #000;
         }
-        @media print {
-            .no-print {
-                display: none;
-            }
-            @page {
-                size: A4;
-                margin: 20mm;
-            }
-            body {
-                margin: 0;
-            }
+
+        .main-table th,
+        .main-table td {
+            border: 1px solid #000;
+            padding: 8px 6px;
+            font-size: 13px;
+        }
+
+        .main-table th {
+            background-color: #e0e0e0;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .col-no {
+            width: 50px;
+            text-align: center;
+        }
+
+        .col-item {
+            width: auto;
+        }
+
+        .col-qty {
+            width: 80px;
+            text-align: center;
+        }
+
+        .col-unit {
+            width: 80px;
+            text-align: center;
+        }
+
+        .col-remark {
+            width: 200px;
+        }
+
+        .data-row {
+            height: 35px;
+        }
+
+        .data-row td {
+            background-color: #f5f5f5;
+        }
+
+        /* Approval Section */
+        .approval-section {
+            margin-top: 20px;
+            width: 100%;
+        }
+
+        .approval-labels {
+            width: 100%;
+            margin-bottom: 5px;
+        }
+
+        .approval-label {
+            width: 33%;
+            text-align: center;
+            font-size: 13px;
+            font-weight: bold;
+            float: left;
+        }
+
+        .signature-section {
+            width: 100%;
+            margin-top: 55px;
+        }
+
+        .signature-box {
+            width: 33%;
+            text-align: center;
+            float: left;
+        }
+
+        .signature-title {
+            font-size: 13px;
+            font-weight: bold;
+            border-bottom: 1px solid #000;
+            padding-bottom: 3px;
+            display: inline-block;
         }
     </style>
 </head>
+
 <body>
     <div class="container">
-        
-        <div class="no-print print-button-container">
-            <button onclick="window.print()">Cetak Halaman</button>
+        <!-- Header -->
+        <div class="header">
+            <div class="logo-section">
+                <div class="logo">
+                    @if (isset($settings['store_logo']) && file_exists(public_path('storage/' . $settings['store_logo'])))
+                        @php
+                            $logoPath = public_path('storage/' . $settings['store_logo']);
+                            $logoData = base64_encode(file_get_contents($logoPath));
+                            $logoExt = pathinfo($logoPath, PATHINFO_EXTENSION);
+                            $logoMime = $logoExt === 'png' ? 'png' : 'jpeg';
+                        @endphp
+                        <img src="data:image/{{ $logoMime }};base64,{{ $logoData }}" alt="Logo">
+                    @endif
+                </div>
+                <div class="company-name">{{ strtoupper($settings['store_name'] ?? 'MIZUMI ONSEN') }}</div>
+            </div>
+            <div class="form-number">No: {{ $storeRequest->request_number ?? 'SR-0001' }}</div>
         </div>
 
-        <h2>STORE REQUISITION</h2>
+        <div class="clear"></div>
 
-        {{-- BAGIAN HEADER --}}
-        <table class="header-table">
-            <tr>
-                <td style="width: 15%;">DEPT. :</td>
-                <td style="width: 45%;"></td>
-                <td style="width: 15%;">DATE</td>
-                <td style="width: 25%;">: {{ $storeRequest->created_at->toDateString() }}</td>
-            </tr>
-            <tr>
-                <td>DEPT. TO CHARGE :</td>
-                <td></td>
-                <td>STORE</td>
-                <td>: </td> {{-- Bisa dibuat dinamis jika perlu --}}
-            </tr>
-        </table>
+        <div class="form-title">STORE REQUISITION</div>
 
-        {{-- BAGIAN ITEM --}}
-        <table class="items-table">
+        <!-- Info Line -->
+        <div class="info-line">
+            <div class="info-row">
+                <div class="dept-section">
+                    <span class="label-text">DEPT:</span>
+                    <span class="underline">{{ $storeRequest->department ?? '' }}</span>
+                </div>
+                <div class="date-section">
+                    <span class="label-text">TANGGAL:</span>
+                    <span
+                        class="underline">{{ $storeRequest->created_at ? $storeRequest->created_at->format('d/m/Y') : '' }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="clear"></div>
+
+        <!-- Table -->
+        <table class="main-table">
             <thead>
                 <tr>
-                    <th style="width: 15%;">STORE CODE</th>
-                    <th style="width: 45%;">DESCRIPTION</th>
-                    <th style="width: 20%;">REQUISITION QUANTITY</th>
-                    <th style="width: 20%;">ISSUED QUANTITY</th>
+                    <th class="col-no">NO.</th>
+                    <th class="col-item">ITEM</th>
+                    <th class="col-qty">QTY</th>
+                    <th class="col-unit">UNIT</th>
+                    <th class="col-remark">REMARK</th>
                 </tr>
             </thead>
             <tbody>
-                {{-- Loop untuk item yang ada di store request --}}
-                @foreach($storeRequest->items as $item)
-                <tr>
-                    <td class="text-center">{{ $item->ingredient->id }}</td>
-                    <td>{{ $item->ingredient->name }}</td>
-                    <td class="text-center">{{ $item->requested_quantity }} {{ $item->ingredient->unit }}</td>
-                    <td class="text-center">{{ $item->issued_quantity }} {{ $item->ingredient->unit }}</td>
-                </tr>
-                @endforeach
+                @forelse($storeRequest->items as $index => $item)
+                    @if ($index < 10)
+                        <tr class="data-row">
+                            <td class="col-no">{{ $index + 1 }}</td>
+                            <td class="col-item">{{ $item->ingredient->name ?? '' }}</td>
+                            <td class="col-qty">{{ $item->quantity ?? '' }}</td>
+                            <td class="col-unit">{{ $item->ingredient->unit ?? '' }}</td>
+                            <td class="col-remark">{{ $item->notes ?? '' }}</td>
+                        </tr>
+                    @endif
+                @empty
+                @endforelse
 
-                {{-- Loop untuk membuat baris kosong agar tabel terlihat penuh --}}
-                @for ($i = count($storeRequest->items); $i < 15; $i++)
-                <tr>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
-                    <td>&nbsp;</td>
-                </tr>
+                @for ($i = count($storeRequest->items); $i < 10; $i++)
+                    <tr class="data-row">
+                        <td class="col-no">{{ $i + 1 }}</td>
+                        <td class="col-item"></td>
+                        <td class="col-qty"></td>
+                        <td class="col-unit"></td>
+                        <td class="col-remark"></td>
+                    </tr>
                 @endfor
             </tbody>
         </table>
 
-        {{-- BAGIAN REMARKS --}}
-        <table>
-            <tr>
-                <th class="remarks-header" style="width: 15%;">REMARKS</th>
-                <td class="remarks-content">{{ $storeRequest->remarks }}</td>
-            </tr>
-        </table>
+        <!-- Approval Section -->
+        <div class="approval-section">
+            <div class="approval-labels">
+                <div class="approval-label">Requested</div>
+                <div class="approval-label">Checked</div>
+                <div class="approval-label">Approved</div>
+            </div>
 
-        {{-- BAGIAN PERSETUJUAN --}}
-        <table class="approval-table">
-            <tr>
-                <td style="width: 15%;">APPROVED BY</td>
-                <td style="width: 2%;">:</td>
-                <td style="width: 43%;"></td>
-                <td style="width: 10%;">DATE</td>
-                <td style="width: 2%;">:</td>
-                <td style="width: 28%;"></td>
-            </tr>
-            <tr>
-                <td>ISSUED BY</td>
-                <td>:</td>
-                <td>
-                    {{ $storeRequest->issuer && $storeRequest->issuer->name ? $storeRequest->issuer->name : '..............................' }}
-                </td>
-                <td>DATE</td>
-                <td>:</td>
-                <td>
-                    {{ $storeRequest->issued_at ? \Carbon\Carbon::parse($storeRequest->issued_at)->format('d-m-Y') : '..............................' }}
-                </td>
-            </tr>
-            <tr>
-                <td>RECEIVED BY</td>
-                <td>:</td>
-                <td></td>
-                <td>DATE</td>
-                <td>:</td>
-                <td></td>
-            </tr>
-        </table>
+            <div class="clear"></div>
 
+            <div class="signature-section">
+                <div class="signature-box">
+                    <div class="signature-title">Departement</div>
+                </div>
+                <div class="signature-box">
+                    <div class="signature-title">Accounting</div>
+                </div>
+                <div class="signature-box">
+                    <div class="signature-title">General Manager</div>
+                </div>
+            </div>
+
+            <div class="clear"></div>
+        </div>
     </div>
-
-    <script>
-        // Otomatis membuka dialog print saat halaman dimuat
-        window.onload = function() {
-            window.print();
-        }
-    </script>
 </body>
+
 </html>
