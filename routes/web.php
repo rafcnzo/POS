@@ -12,16 +12,15 @@ use App\Models\Sale;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', [AuthenticatedSessionController::class, 'create'])->name('auth.login');
+Route::get('/', [AuthenticatedSessionController::class, 'create'])
+    ->name('auth.login')
+    ->middleware('guest');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
-
-Route::get('/setup', [SetupController::class, 'showSetupForm'])->name('setup.show');
-Route::post('/setup', [SetupController::class, 'processSetup'])->name('setup.process');
 
 Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () {
 
@@ -47,6 +46,19 @@ Route::middleware(['auth'])->prefix('admin')->name('admin.')->group(function () 
         Route::post('/roles/submit', [AdminController::class, 'rolesSubmit'])->name('roles.submit');
         Route::delete('/roles/{role}', [AdminController::class, 'rolesDestroy'])->name('roles.destroy');
 
+        Route::get('allowed-ips', [AdminController::class, 'ipWhitelistIndex'])->name('allowed-ips.index');
+        Route::get('allowed-ips/show/{ip}', [AdminController::class, 'ipWhitelistShow'])->name('allowed-ips.show');
+        Route::post('allowed-ips/store', [AdminController::class, 'ipWhitelistStore'])->name('allowed-ips.store');
+        Route::delete('allowed-ips/destroy/{ip}', [AdminController::class, 'ipWhitelistDestroy'])->name('allowed-ips.destroy');
+
+    });
+
+    Route::prefix('setup')->name('setup.')->group(function () {
+        Route::get('/database', [SetupController::class, 'databaseIndex'])->name('database.index');
+        Route::post('/database/test', [SetupController::class, 'testConnection'])->name('database.test');
+        Route::post('/database/save', [SetupController::class, 'saveConnection'])->name('database.save');
+        Route::get('/initial', [SetupController::class, 'showSetupForm'])->name('initial.show');
+        Route::post('/initial', [SetupController::class, 'processSetup'])->name('initial.process');
     });
 
 });
@@ -77,10 +89,14 @@ Route::middleware(['auth'])->prefix('acc')->name('acc.')->group(function () {
     Route::get('/laporan/stok-mutasi', [AccountingController::class, 'stockMovementReport'])->name('laporan-stok-mutasi');
     Route::get('/laporan/stok-mutasi/export/{type}', [AccountingController::class, 'stockMovementExport'])->name('laporan-stok-mutasi.export');
 
+    Route::post('/stock-opname/submit', [AccountingController::class, 'submitStockOpname'])->name('stock-opname.submit');
+    Route::get('/stock-opname/export/pdf', [AccountingController::class, 'stockOpnameTodayPdf'])->name('stock-opname.export.pdf');
+    Route::get('/stock-opname/export/excel', [AccountingController::class, 'stockOpnameTodayExcel'])->name('stock-opname.export.excel');
+
     // Routes Laporan Laba Rugi
     Route::get('/laporan/laba-rugi', [AccountingController::class, 'profitAndLossReport'])->name('laporan-labarugi');
     Route::get('/laporan/laba-rugi/download/excel', [AccountingController::class, 'profitAndLossDownloadExcel'])
-    ->name('laporan-labarugi.download.excel');
+        ->name('laporan-labarugi.download.excel');
 });
 
 Route::middleware(['auth'])->prefix('prc')->name('prc.')->group(function () {
@@ -225,4 +241,20 @@ Route::get('/test-print/{id}', function ($id) {
 //         return 'Error: ' . $e->getMessage();
 //     }
 // });
+
+Route::get('/debug-php', function () {
+    return response()->json([
+        'PHP_BINARY'            => PHP_BINARY,
+        'PHP_VERSION'           => PHP_VERSION,
+        'php_ini_loaded_file'   => php_ini_loaded_file(),
+        'php_ini_scanned_files' => php_ini_scanned_files(),
+        'pdo_drivers'           => PDO::getAvailableDrivers(),
+        'extension_dir'         => ini_get('extension_dir'),
+    ]);
+});
+
+Route::get('/phpinfo', function () {
+    phpinfo();
+});
+
 require __DIR__ . '/auth.php';

@@ -212,7 +212,7 @@
                                   id="bahan_minimum_stock" name="minimum_stock" placeholder="0" required>
                        </div>
                     </div>
-                    <input type="hidden" name="category" value="kitchen">
+                    <input type="hidden" name="category" value="bar">
                     <div class="modal-footer custom-modal-footer">
                         <button type="button" class="btn-secondary-custom" data-bs-dismiss="modal">
                             <i class="bi bi-x"></i>

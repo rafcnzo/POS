@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('reservations', function (Blueprint $table) {
-            $table->id();
+            $table->bigIncrements('id');
             $table->string('customer_name');
             $table->string('table_number')->nullable();                                                              
             $table->integer('pax');                                                                                    

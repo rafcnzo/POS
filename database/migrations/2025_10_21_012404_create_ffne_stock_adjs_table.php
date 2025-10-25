@@ -12,15 +12,28 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('ffne_stock_adjs', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('ffne_id')->constrained('ffnes')->onDelete('cascade');
-            $table->integer('qty');
-            $table->enum('type', ['initial', 'usage', 'received', 'waste', 'adjustment'])
-                  ->default('usage')
-                  ->after('qty');
+            $table->bigIncrements('id');
+
+            $table->foreignId('ffne_id')
+                ->constrained('ffnes')
+                ->onDelete('cascade');
+
+            $table->foreignId('user_id')
+                ->nullable()
+                ->constrained('users')
+                ->onDelete('set null');
+
+            $table->decimal('quantity', 10, 2);
+            $table->decimal('stock_before', 10, 2)->default(0);
+            $table->decimal('stock_after', 10, 2)->default(0);
+
+            $table->enum('type', ['opname', 'waste', 'manual_add', 'initial', 'pembelian', 'penjualan'])
+                ->default('initial');
+
             $table->string('notes')->nullable();
-            $table->unsignedBigInteger('reference_id')->nullable()->after('notes'); 
-            $table->string('reference_type')->nullable()->after('reference_id');
+            $table->unsignedBigInteger('reference_id')->nullable();
+            $table->string('reference_type')->nullable();
+
             $table->timestamps();
         });
     }

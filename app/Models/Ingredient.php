@@ -10,7 +10,7 @@ class Ingredient extends Model
     use HasFactory;
 
     const CATEGORY_KITCHEN = 'kitchen';
-    const CATEGORY_BAR = 'bar';
+    const CATEGORY_BAR     = 'bar';
 
     protected $fillable = [
         'name',
@@ -37,10 +37,6 @@ class Ingredient extends Model
     {
         return $this->morphMany(StoreRequestItem::class, 'itemable');
     }
-    public function purchaseOrderItems()
-    {
-        return $this->hasMany(PurchaseOrderItem::class);
-    }
 
     public function getAverageCost(): float
     {
@@ -52,13 +48,22 @@ class Ingredient extends Model
         $result = $this->purchaseOrderItems()
             ->select(DB::raw('SUM(price * quantity) as total_value, SUM(quantity) as total_quantity'))
             ->first();
-        if (!$result || $result->total_quantity == 0) {
+        if (! $result || $result->total_quantity == 0) {
             return (float) $this->cost_price;
         }
 
-        $averageCost = $result->total_value / $result->total_quantity;
+        $averageCost      = $result->total_value / $result->total_quantity;
         $cache[$this->id] = (float) $averageCost;
 
         return (float) $averageCost;
+    }
+    public function purchaseOrderItems()
+    {
+        return $this->morphMany(PurchaseOrderItem::class, 'itemable');
+    }
+
+    public function stockAdjustments()
+    {
+        return $this->hasMany(IngredientStockAdjustment::class);
     }
 }

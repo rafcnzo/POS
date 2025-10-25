@@ -44,8 +44,10 @@ class AuthenticatedSessionController extends Controller
             $url = route('admin.index'); // sesuai dengan route 'admin.index' -> '/admin'
         } elseif ($user->hasRole('Accounting')) {
             $url = route('acc.suppliers.index'); // sesuai dengan route acc
-        } elseif ($user->hasRole('Chef')) {
-            $url = route('kitchen.menu.index'); // sesuai dengan route kitchen
+        } elseif ($user->hasRole('HeadBar')) {
+            $url = route('kitchen.menu.index'); // route untuk HeadBar, sesuaikan jika perlu
+        } elseif ($user->hasRole('HeadKitchen')) {
+            $url = route('kitchen.menu.index'); // route untuk HeadKitchen, sesuaikan jika perlu
         } elseif ($user->hasRole('Cashier')) {
             $url = route('cashier.index'); // sesuai dengan route cashier
         } else {

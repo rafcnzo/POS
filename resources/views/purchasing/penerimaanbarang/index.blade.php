@@ -123,7 +123,8 @@
         aria-hidden="true" style="--bs-modal-width: 800px;">
         <div class="modal-dialog modal-lg modal-dialog-scrollable" style="max-width: 800px; margin: 0 auto;">
             <div class="modal-content" style="max-height:90vh; overflow:hidden; display:flex; flex-direction:column;">
-                <form id="formTambahPenerimaan" enctype="multipart/form-data" style="height:100%;display:flex;flex-direction:column;">
+                <form id="formTambahPenerimaan" enctype="multipart/form-data"
+                    style="height:100%;display:flex;flex-direction:column;">
                     <div class="modal-header" style="flex-shrink: 0;">
                         <h5 class="modal-title" id="modalTambahPenerimaanLabel"><i class="bi bi-plus-circle"></i> Tambah
                             Penerimaan Barang</h5>
@@ -213,7 +214,8 @@
                 if (e.target.closest('.btnHapusPenerimaan')) {
                     let btn = e.target.closest('.btnHapusPenerimaan');
                     let id = btn.getAttribute('data-id');
-                    let url = document.getElementById('tabel-penerimaanbarang').getAttribute('data-url').replace(/0$/, id);
+                    let url = document.getElementById('tabel-penerimaanbarang').getAttribute('data-url')
+                        .replace(/0$/, id);
 
                     Swal.fire({
                         title: 'Yakin ingin menghapus?',
@@ -246,8 +248,10 @@
                                                 message: 'Gagal parsing response server.'
                                             };
                                         }
-                                        if (response.ok && data.status !== 'error') {
-                                            Swal.fire('Terhapus!', data.message, 'success')
+                                        if (response.ok && data.status !==
+                                            'error') {
+                                            Swal.fire('Terhapus!', data.message,
+                                                    'success')
                                                 .then(() => location.reload());
                                         } else {
                                             Swal.fire('Gagal', data.message ||
@@ -257,7 +261,8 @@
                                     })
                                     .catch(error => {
                                         hideLoading();
-                                        Swal.fire('Gagal', 'Terjadi kesalahan saat menghapus data.',
+                                        Swal.fire('Gagal',
+                                            'Terjadi kesalahan saat menghapus data.',
                                             'error');
                                     });
                             });
@@ -266,7 +271,6 @@
                 }
             });
 
-            // ... (Kode untuk modal tambah tetap sama) ...
             const poSelect = document.getElementById('purchase_order_id');
             const itemsContainer = document.getElementById('itemsContainer');
             poSelect && poSelect.addEventListener('change', function() {
@@ -385,9 +389,11 @@
                                 hideLoading();
                                 const data = await response.json();
                                 if (response.ok && data.status === 'success') {
-                                    const modal = document.getElementById('modalTambahPenerimaan');
+                                    const modal = document.getElementById(
+                                        'modalTambahPenerimaan');
                                     if (modal) {
-                                        const modalInstance = bootstrap.Modal.getInstance(modal) || new bootstrap.Modal(modal);
+                                        const modalInstance = bootstrap.Modal.getInstance(
+                                            modal) || new bootstrap.Modal(modal);
                                         modalInstance.hide();
                                     }
                                     Swal.fire({
@@ -428,10 +434,10 @@
                     penerimaanDetailLoading.classList.remove('d-none');
 
                     const modalDetailPenerimaan = document.getElementById('modalDetailPenerimaan');
-                     if (modalDetailPenerimaan) {
+                    if (modalDetailPenerimaan) {
                         const bsModal = bootstrap.Modal.getOrCreateInstance(modalDetailPenerimaan);
                         bsModal.show();
-                     }
+                    }
 
                     fetch("{{ url('prc/penerimaanbarang') }}/" + id, {
                             headers: {
@@ -459,31 +465,36 @@
                                 let itemsHtml = '<p>Tidak ada item dalam penerimaan ini.</p>';
                                 if (data.detail_items && data.detail_items.length > 0) {
                                     itemsHtml = `
-                                        <h6 class="mt-4">Rincian Barang Diterima</h6>
-                                        <table class="table table-sm table-bordered">
-                                            <thead class="table-light">
-                                                <tr>
-                                                    <th>#</th>
-                                                    <th>Nama Barang</th>
-                                                    <th class="text-end">Qty Diterima</th>
-                                                    <th class="text-end">Qty Ditolak</th>
-                                                    <th>Catatan</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                    `;
+                            <h6 class="mt-4">Rincian Barang Diterima</h6>
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Nama Barang</th>
+                                        <th class="text-end">Qty Diterima</th>
+                                        <th class="text-end">Qty Ditolak</th>
+                                        <th>Catatan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                        `;
                                     data.detail_items.forEach((item, index) => {
-                                        // PERBAIKAN: Mengakses nama dari relasi yang benar
-                                        const itemName = item.ingredient ? item.ingredient.name : 'Nama Barang Tidak Ditemukan';
+                                        // 'item' adalah GoodsReceiptItem
+                                        // 'item.ingredient' sudah tidak ada. Ganti dengan:
+                                        // 'item.item_name' (dari controller 'penerimaanbarangShow')
+
+                                        const itemName = item.item_name ||
+                                        'N/A'; // Ambil nama yang sudah diproses controller
+
                                         itemsHtml += `
-                                            <tr>
-                                                <td>${index + 1}</td>
-                                                <td>${itemName}</td>
-                                                <td class="text-end">${parseFloat(item.quantity_received) || 0}</td>
-                                                <td class="text-end">${parseFloat(item.quantity_rejected) || 0}</td>
-                                                <td>${item.notes || '-'}</td>
-                                            </tr>
-                                        `;
+                                <tr>
+                                    <td>${index + 1}</td>
+                                    <td>${itemName} (${item.item_unit || 'Unit'})</td>
+                                    <td class="text-end">${parseFloat(item.quantity_received) || 0}</td>
+                                    <td class="text-end">${parseFloat(item.quantity_rejected) || 0}</td>
+                                    <td>${item.notes || '-'}</td>
+                                </tr>
+                            `;
                                     });
                                     itemsHtml += '</tbody></table>';
                                 }
@@ -513,21 +524,27 @@
                                     if (lihatLink && previewDiv) {
                                         lihatLink.addEventListener('click', function(ev) {
                                             ev.preventDefault();
-                                            const isHidden = previewDiv.style.display === 'none' || previewDiv.style.display === '';
-                                            previewDiv.style.display = isHidden ? 'block' : 'none';
-                                            lihatLink.innerHTML = isHidden ? `<i class="bi bi-eye-slash"></i> Tutup Dokumen` : `<i class="bi bi-eye"></i> Lihat Dokumen`;
+                                            const isHidden = previewDiv.style.display ===
+                                                'none' || previewDiv.style.display === '';
+                                            previewDiv.style.display = isHidden ? 'block' :
+                                                'none';
+                                            lihatLink.innerHTML = isHidden ?
+                                                `<i class="bi bi-eye-slash"></i> Tutup Dokumen` :
+                                                `<i class="bi bi-eye"></i> Lihat Dokumen`;
                                         });
                                     }
                                 }
 
                             } else {
-                                penerimaanDetailContent.innerHTML = `<div class="text-danger">Gagal memuat detail penerimaan. Silakan coba lagi.</div>`;
+                                penerimaanDetailContent.innerHTML =
+                                    `<div class="text-danger">Gagal memuat detail penerimaan. Silakan coba lagi.</div>`;
                             }
                             penerimaanDetailContent.classList.remove('d-none');
                         })
                         .catch(() => {
                             penerimaanDetailLoading.classList.add('d-none');
-                            penerimaanDetailContent.innerHTML = `<div class="text-danger">Gagal memuat detail penerimaan. Silakan coba lagi.</div>`;
+                            penerimaanDetailContent.innerHTML =
+                                `<div class="text-danger">Gagal memuat detail penerimaan. Silakan coba lagi.</div>`;
                             penerimaanDetailContent.classList.remove('d-none');
                         });
                 }

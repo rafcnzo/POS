@@ -14,14 +14,11 @@ return new class extends Migration
             $table->foreignId('issued_by')->nullable()->comment('User yang mengeluarkan barang')->constrained('users');
             $table->timestamp('issued_at')->nullable();
             $table->text('remarks')->nullable();
-            $table->enum('status', ['proses', 'po'])->default('proses');
+            $table->enum('status', ['proses', 'po', 'diterima'])->default('proses');
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('store_requests');

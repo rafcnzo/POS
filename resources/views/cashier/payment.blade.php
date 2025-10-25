@@ -527,71 +527,24 @@
                                 denyButtonText: '<i class="bi bi-receipt"></i> Cetak Struk Dapur',
                                 cancelButtonText: 'Selesai',
 
-                                preConfirm: () => {
-                                    return fetch("{{ url('cashier/sales') }}/" + data.sale_id +
-                                            "/print/customer")
-                                        .then(response => {
-                                            if (response.headers.get("content-type")?.includes(
-                                                    "text/html")) {
-                                                return response.text().then(html => {
-                                                    const printWindow = window.open('',
-                                                        '_blank');
-                                                    printWindow.document.write(html);
-                                                    printWindow.document.close();
-                                                });
-                                            }
-                                            return response.json();
-                                        })
-                                        .then(printData => {
-                                            if (printData && printData.status === 'success') {
-                                                toastr.success(printData.message);
-                                            } else if (printData && printData.status ===
-                                                'error') {
-                                                Swal.showValidationMessage(printData.message);
-                                            }
-                                            return false;
-                                        })
-                                        .catch(() => {
-                                            Swal.showValidationMessage(
-                                                'Gagal menghubungi server cetak.');
-                                            return false;
-                                        });
+                                preConfirm: async () => {
+                                    try {
+                                        await handleCustomerReceipt(data.sale_id);
+                                        toastr.success('Struk pelanggan telah dicetak!');
+                                    } catch (err) {
+                                        Swal.showValidationMessage(err.message || 'Gagal mencetak struk pelanggan');
+                                    }
+                                    return false;
                                 },
 
-                                preDeny: () => {
-                                    return fetch("{{ url('cashier/sales') }}/" + data.sale_id +
-                                            "/print/smart", {
-                                                method: 'POST',
-                                                headers: {
-                                                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                                                    'Accept': 'application/json'
-                                                }
-                                            })
-                                        .then(response => {
-                                            if (response.headers.get("content-type")?.includes(
-                                                    "text/html")) {
-                                                return response.text().then(html => {
-                                                    const printWindow = window.open('',
-                                                        '_blank');
-                                                    printWindow.document.write(html);
-                                                    printWindow.document.close();
-                                                });
-                                            }
-                                            return response.json();
-                                        })
-                                        .then(printData => {
-                                            if (printData && printData.success === true) {
-                                                toastr.success(printData.message);
-                                            } else if (printData) {
-                                                Swal.showValidationMessage(printData.message);
-                                            }
-                                            return false;
-                                        })
-                                        .catch(() => {
-                                            Swal.showValidationMessage(
-                                                'Gagal menghubungi server cetak.');
-                                            return false;
-                                        });
+                                preDeny: async () => {
+                                    try {
+                                        await handleSmartPrint(data.sale_id);
+                                        toastr.success('Pesanan telah dikirim ke dapur/bar!');
+                                    } catch (err) {
+                                        Swal.showValidationMessage(err.message || 'Gagal mencetak pesanan dapur');
+                                    }
+                                    return false;
                                 }
 
                             }).then((result) => {
@@ -651,12 +604,14 @@
                                             });
                                         } else {
                                             Swal.fire('Gagal!', data.message ||
-                                                'Gagal membatalkan transaksi.', 'error');
+                                                'Gagal membatalkan transaksi.',
+                                                'error');
                                         }
                                     })
                                     .catch(error => {
                                         hideLoading();
-                                        Swal.fire('Error!', 'Tidak dapat terhubung ke server.',
+                                        Swal.fire('Error!',
+                                            'Tidak dapat terhubung ke server.',
                                             'error');
                                     });
                             }
@@ -667,6 +622,170 @@
 
             // Kalkulasi awal on load
             recalculateTotal();
+        });
+
+        // ========== QZ TRAY CONFIGURATION ==========
+        let qzInstance = null;
+
+        async function initQZ() {
+            if (qzInstance) return qzInstance;
+
+            try {
+                if (!qz.websocket.isActive()) {
+                    await qz.websocket.connect();
+                    console.log("QZ Tray connected successfully");
+                }
+                qzInstance = qz;
+                return qzInstance;
+            } catch (err) {
+                console.error("QZ Tray connection failed:", err);
+                throw new Error("Tidak dapat terhubung ke QZ Tray. Pastikan aplikasi QZ Tray sudah berjalan.");
+            }
+        }
+
+        async function printWithQZ(printerName, htmlContent) {
+            try {
+                await initQZ();
+
+                const config = qz.configs.create(printerName, {
+                    scaleContent: false,
+                    rasterize: false,
+                    interpolation: 'bicubic',
+                    margins: {
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        left: 0
+                    }
+                });
+
+                const data = [{
+                    type: 'pixel',
+                    format: 'html',
+                    flavor: 'plain',
+                    data: htmlContent
+                }];
+
+                await qz.print(config, data);
+                console.log(`Print sent to ${printerName}`);
+                return true;
+            } catch (err) {
+                console.error("Print error:", err);
+                throw err;
+            }
+        }
+
+        // ========== SMART PRINT HANDLER (Kitchen & Bar) ==========
+        async function handleSmartPrint(saleId) {
+            try {
+                Swal.fire({
+                    title: 'Mencetak...',
+                    text: 'Mengirim ke printer dapur/bar',
+                    allowOutsideClick: false,
+                    didOpen: () => Swal.showLoading()
+                });
+
+                const response = await fetch(`/cashier/print/smart/${saleId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                    }
+                });
+
+                const result = await response.json();
+
+                if (!result.success || !result.jobs || result.jobs.length === 0) {
+                    throw new Error(result.message || 'Tidak ada print jobs tersedia');
+                }
+
+                // Connect QZ Tray
+                await initQZ();
+
+                // Print each job
+                for (const job of result.jobs) {
+                    await printWithQZ(job.printer, job.html);
+                }
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Berhasil!',
+                    text: 'Pesanan telah dikirim ke printer dapur/bar',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
+            } catch (error) {
+                console.error('Smart print error:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Gagal Mencetak',
+                    html: `
+                <p>${error.message}</p>
+                <small class="text-muted">Pastikan QZ Tray sudah berjalan dan printer terhubung.</small>
+            `,
+                    confirmButtonText: 'OK'
+                });
+            }
+        }
+
+        // ========== CUSTOMER RECEIPT HANDLER ==========
+        async function handleCustomerReceipt(saleId) {
+            try {
+                Swal.fire({
+                    title: 'Mencetak Struk...',
+                    text: 'Mengirim ke printer kasir',
+                    allowOutsideClick: false,
+                    didOpen: () => Swal.showLoading()
+                });
+
+                const response = await fetch(`/cashier/print/customer/${saleId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                    }
+                });
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.message || 'Gagal mendapatkan data struk');
+                }
+
+                // Connect QZ Tray
+                await initQZ();
+
+                // Print customer receipt
+                await printWithQZ(result.printer, result.html);
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Berhasil!',
+                    text: 'Struk telah dicetak',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
+            } catch (error) {
+                console.error('Customer receipt print error:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Gagal Mencetak Struk',
+                    html: `
+                <p>${error.message}</p>
+                <small class="text-muted">Pastikan QZ Tray sudah berjalan dan printer terhubung.</small>
+            `,
+                    confirmButtonText: 'OK'
+                });
+            }
+        }
+
+        // ========== AUTO DISCONNECT QZ ON PAGE UNLOAD ==========
+        window.addEventListener('beforeunload', () => {
+            if (qz.websocket.isActive()) {
+                qz.websocket.disconnect();
+            }
         });
     </script>
 @endpush

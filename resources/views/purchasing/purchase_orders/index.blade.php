@@ -186,15 +186,15 @@
                                     class="text-danger">*</span></label>
                             <div id="poPaymentMethodOptions">
                                 <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="radio" name="payment_type"
-                                        id="po_pay_cash" value="petty_cash" checked required>
-                                    <label class="form-check-label" for="po_pay_cash">Cash</label>
+                                    <input class="form-check-input" type="radio" name="payment_type" id="po_pay_petty_cash"
+                                        value="petty_cash" checked required>
+                                    <label class="form-check-label" for="po_pay_petty_cash">Petty Cash</label>
                                 </div>
                                 <div class="form-check form-check-inline" id="poTempoOption" style="display: none;">
-                                    <input class="form-check-input" type="radio" name="payment_type"
-                                        id="po_pay_tempo" value="tempo" required>
+                                    <input class="form-check-input" type="radio" name="payment_type" id="po_pay_tempo"
+                                        value="tempo" required>
                                     <label class="form-check-label" for="po_pay_tempo">
-                                        <strong class="text-primary">Gunakan Tempo</strong>
+                                        <strong class="text-primary">Tempo</strong>
                                     </label>
                                 </div>
                             </div>
@@ -287,15 +287,9 @@
         document.addEventListener('DOMContentLoaded', function() {
             // --- Variabel & Elemen DOM ---
             let poManualItemIdx = 0;
-            const poIngredientOptions = {!! json_encode(
-                \App\Models\Ingredient::orderBy('name')->select(['id', 'name', 'unit'])->get()->map(function ($i) {
-                        return [
-                            'id' => $i->id,
-                            'name' => $i->name,
-                            'unit' => $i->unit,
-                        ];
-                    })->values(),
-            ) !!};
+
+            // Data bahan baku gabungan dari controller (ingredients + ffnes)
+            const bahanbakuOptions = {!! json_encode($bahanbakus->values()) !!};
 
             // Elemen Modal Tambah PO
             const modalTambahPO = document.getElementById('modalTambahPO');
@@ -352,39 +346,74 @@
                 let idx = `manual_${poManualItemIdx++}`;
                 let row = document.createElement('tr');
                 row.dataset.rowId = idx;
+
+                // Generate options untuk dropdown gabungan
+                let optionsHtml = '<option value="">-- Pilih Barang --</option>';
+                bahanbakuOptions.forEach(opt => {
+                    const selected = data.item_id == opt.id && data.item_type == opt.type ? ' selected' :
+                    '';
+                    optionsHtml +=
+                        `<option value="${opt.id}" data-unit="${opt.unit || 'Unit'}" data-type="${opt.type}" data-price="${opt.cost_price || 0}"${selected}>${opt.name}</option>`;
+                });
+
                 row.innerHTML = `
-            <td>
-                <select class="form-select form-select-sm ingredient-select" name="items[${idx}][ingredient_id]" required>
-                    <option value="">-- Pilih --</option>
-                    ${poIngredientOptions.map(opt => `<option value="${opt.id}" data-unit="${opt.unit || 'Unit'}" ${data.ingredient_id==opt.id?' selected':''}>${opt.name}</option>`).join('')}
-                </select>
-            </td>
-            <td>
-                <div class="input-group input-group-sm">
-                    <input type="number" min="0.01" step="any" class="form-control item-qty-manual" name="items[${idx}][quantity]" value="${data.quantity||''}" required placeholder="Qty">
-                    <span class="input-group-text item-unit-manual">${data.unit || 'Unit'}</span>
-                </div>
-            </td>
-            <td>
-                 <input type="number" min="0" step="any" class="form-control form-control-sm item-price-manual" name="items[${idx}][price]" value="${data.price||''}" required placeholder="Harga">
-            </td>
-            <td class="text-end">
-                <strong class="item-subtotal-manual">Rp 0</strong>
-            </td>
-            <td class="text-center">
-                 <button type="button" class="btn btn-danger btn-sm btnRemoveManualItem"><i class="bi bi-trash"></i></button>
-            </td>
-        `;
+                    <td>
+                        <select class="form-select form-select-sm item-select" name="items[${idx}][item_id]" required>
+                            ${optionsHtml}
+                        </select>
+                        <input type="hidden" class="item-type-input" name="items[${idx}][item_type]" value="${data.item_type || ''}">
+                    </td>
+                    <td>
+                        <div class="input-group input-group-sm">
+                            <input type="number" min="0.01" step="any" class="form-control item-qty-manual" name="items[${idx}][quantity]" value="${data.quantity||''}" required placeholder="Qty">
+                            <span class="input-group-text item-unit-manual">${data.unit || 'Unit'}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <input type="number" min="0" step="any" class="form-control form-control-sm item-price-manual" name="items[${idx}][price]" value="${data.price||''}" required placeholder="Harga">
+                    </td>
+                    <td class="text-end">
+                        <strong class="item-subtotal-manual">Rp 0</strong>
+                    </td>
+                    <td class="text-center">
+                        <button type="button" class="btn btn-danger btn-sm btnRemoveManualItem"><i class="bi bi-trash"></i></button>
+                    </td>
+                `;
                 poManualItemsTableBody.appendChild(row);
+
+                // Trigger calculation if data provided
+                if (data.quantity && data.price) {
+                    calculateTotalPO();
+                }
             }
 
-            // Update Satuan/unit di baris manual
-            function updateManualItemUnit(event) {
+            // Update Satuan/unit dan type di baris manual
+            function updateManualItemDetails(event) {
                 const select = event.target;
                 const selectedOption = select.options[select.selectedIndex];
-                const unitSpan = select.closest('tr')?.querySelector('.item-unit-manual');
+                const row = select.closest('tr');
+
+                if (!row) return;
+
+                const unitSpan = row.querySelector('.item-unit-manual');
+                const typeInput = row.querySelector('.item-type-input');
+                const priceInput = row.querySelector('.item-price-manual');
+
                 if (unitSpan) {
                     unitSpan.textContent = selectedOption.dataset.unit || 'Unit';
+                }
+
+                if (typeInput) {
+                    typeInput.value = selectedOption.dataset.type || '';
+                }
+
+                // Auto-fill harga dari cost_price jika ada
+                if (priceInput && selectedOption.dataset.price) {
+                    const price = parseFloat(selectedOption.dataset.price) || 0;
+                    if (price > 0 && !priceInput.value) {
+                        priceInput.value = price;
+                        calculateTotalPO();
+                    }
                 }
             }
 
@@ -543,26 +572,35 @@
                         .then(data => {
                             if (data.status === 'success' && data.items && data.items.length > 0) {
                                 let html = `<table class="table table-sm table-bordered align-middle">
-                                    <thead><tr><th>Nama Bahan</th><th>Qty Diminta</th><th>Harga Satuan</th><th class="text-end">Subtotal</th></tr></thead>
+                                    <thead>
+                                        <tr>
+                                            <th>Nama Barang</th>
+                                            <th>Qty Diminta</th>
+                                            <th>Harga Satuan</th>
+                                            <th class="text-end">Subtotal</th>
+                                        </tr>
+                                    </thead>
                                     <tbody>`;
 
                                 data.items.forEach((item, idx) => {
                                     let defaultPrice = 0;
                                     let subtotal = (parseFloat(item.quantity) || 0) *
                                         defaultPrice;
+
                                     html += `<tr>
-                                 <td>
-                                     <input type="hidden" name="items[${idx}][ingredient_id]" value="${item.ingredient_id}">
-                                     ${item.ingredient_name}
-                                 </td>
-                                 <td>
-                                     <input type="number" min="0.01" step="any" class="form-control form-control-sm po-item-qty" name="items[${idx}][quantity]" value="${item.quantity}" required>
-                                 </td>
-                                 <td>
-                                     <input type="number" min="0" step="any" class="form-control form-control-sm po-item-price" name="items[${idx}][price]" value="${defaultPrice}" required>
-                                 </td>
-                                 <td class="text-end po-item-subtotal">${formatCurrency(subtotal)}</td>
-                              </tr>`;
+                                        <td>
+                                            <input type="hidden" name="items[${idx}][item_id]" value="${item.item_id}">
+                                            <input type="hidden" name="items[${idx}][item_type]" value="${item.item_type}">
+                                            <span>${item.item_name}${item.item_unit ? ' <small>(' + item.item_unit + ')</small>' : ''}</span>
+                                        </td>
+                                        <td>
+                                            <input type="number" min="0.01" step="any" class="form-control form-control-sm po-item-qty" name="items[${idx}][quantity]" value="${item.quantity}" required>
+                                        </td>
+                                        <td>
+                                            <input type="number" min="0" step="any" class="form-control form-control-sm po-item-price" name="items[${idx}][price]" value="${defaultPrice}" required>
+                                        </td>
+                                        <td class="text-end po-item-subtotal">${formatCurrency(subtotal)}</td>
+                                    </tr>`;
                                 });
 
                                 html += '</tbody></table>';
@@ -602,8 +640,8 @@
                 });
 
                 poManualItemsTableBody.addEventListener('change', function(e) {
-                    if (e.target.classList.contains('ingredient-select')) {
-                        updateManualItemUnit(e);
+                    if (e.target.classList.contains('item-select')) {
+                        updateManualItemDetails(e);
                     }
                 });
             }
@@ -646,10 +684,26 @@
                         }
                     }
 
-                    // Validasi item
-                    const hasItems = document.querySelectorAll('input[name$="[ingredient_id]"]').length > 0;
-                    if (!hasItems) {
+                    // Validasi item - cek item_id dan item_type
+                    const itemIds = document.querySelectorAll('input[name$="[item_id]"]');
+                    const itemTypes = document.querySelectorAll('input[name$="[item_type]"]');
+
+                    if (itemIds.length === 0) {
                         Swal.fire('Item Kosong', 'Harap tambahkan minimal satu item barang ke dalam PO.',
+                            'warning');
+                        return;
+                    }
+
+                    // Validasi setiap item memiliki item_type
+                    let hasInvalidItem = false;
+                    itemTypes.forEach(typeInput => {
+                        if (!typeInput.value) {
+                            hasInvalidItem = true;
+                        }
+                    });
+
+                    if (hasInvalidItem) {
+                        Swal.fire('Data Tidak Valid', 'Pastikan semua item telah dipilih dengan benar.',
                             'warning');
                         return;
                     }
@@ -707,9 +761,9 @@
 
                                 if (poFormAlert) {
                                     poFormAlert.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
-                                                   <strong>Gagal!</strong><br>${errorMsg}
-                                                   <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                                               </div>`;
+                                        <strong>Gagal!</strong><br>${errorMsg}
+                                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                                    </div>`;
                                     poFormAlert.style.display = 'block';
 
                                     const modalBody = modalTambahPO.querySelector('.modal-body');
@@ -823,7 +877,8 @@
                                                 };
                                             }
 
-                                            if (response.ok && data.status !== 'error') {
+                                            if (response.ok && data.status !==
+                                                'error') {
                                                 Swal.fire({
                                                     title: 'Terhapus!',
                                                     text: data.message,
@@ -895,41 +950,43 @@
                             if (data.status === 'success' && data.po) {
                                 const po = data.po;
                                 let html = `
-                        <div class="mb-3">
-                            <dl class="row">
-                                <dt class="col-sm-4">No. PO</dt>
-                                <dd class="col-sm-8">${po.po_number || '-'}</dd>
-                                <dt class="col-sm-4">Tanggal PO</dt>
-                                <dd class="col-sm-8">${po.order_date ? (typeof moment !== 'undefined' ? moment(po.order_date).format('DD MMM YYYY') : po.order_date) : '-'}</dd>
-                                <dt class="col-sm-4">Supplier</dt>
-                                <dd class="col-sm-8">${po.supplier?.name || '-'}</dd>
-                                <dt class="col-sm-4">Store Request</dt>
-                                <dd class="col-sm-8">${po.store_request?.request_number || '-'}</dd>
-                                <dt class="col-sm-4">Metode Pembayaran</dt>
-                                <dd class="col-sm-8"><span class="badge bg-info">${po.payment_type || '-'}</span></dd>
-                                <dt class="col-sm-4">Status</dt>
-                                <dd class="col-sm-8"><span class="badge bg-success">${po.status || 'Pending'}</span></dd>
-                                <dt class="col-sm-4">Nilai Total PO</dt>
-                                <dd class="col-sm-8"><strong>Rp ${parseInt(po.total_amount || 0).toLocaleString('id-ID')}</strong></dd>
-                                <dt class="col-sm-4">Catatan</dt>
-                                <dd class="col-sm-8">${po.notes ? po.notes.replace(/\n/g,'<br>') : '-'}</dd>
-                            </dl>
-                        </div>
-                        <div class="mb-2">
-                            <strong>Detail Item:</strong>
-                            <div class="table-responsive">
-                                <table class="table table-bordered table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th>No</th>
-                                            <th>Nama Bahan</th>
-                                            <th>Qty</th>
-                                            <th>Harga Satuan</th>
-                                            <th>Subtotal</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                    `;
+                                    <div class="mb-3">
+                                        <dl class="row">
+                                            <dt class="col-sm-4">No. PO</dt>
+                                            <dd class="col-sm-8">${po.po_number ?? '-'}</dd>
+                                            <dt class="col-sm-4">Tanggal PO</dt>
+                                            <dd class="col-sm-8">${po.order_date ? (typeof moment !== 'undefined' ? moment(po.order_date).format('DD MMM YYYY') : po.order_date) : '-'}</dd>
+                                            <dt class="col-sm-4">Supplier</dt>
+                                            <dd class="col-sm-8">${po.supplier && po.supplier.name ? po.supplier.name : '-'}</dd>
+                                            <dt class="col-sm-4">Store Request</dt>
+                                            <dd class="col-sm-8">${po.store_request && po.store_request.request_number ? po.store_request.request_number : '-'}</dd>
+                                            <dt class="col-sm-4">Metode Pembayaran</dt>
+                                            <dd class="col-sm-8"><span class="badge bg-info">${po.payment_type ? (po.payment_type === 'cash' ? 'Cash' : 'Tempo') : '-'}</span></dd>
+                                            <dt class="col-sm-4">Status</dt>
+                                            <dd class="col-sm-8"><span class="badge bg-success">${po.status ? po.status : 'Pending'}</span></dd>
+                                            <dt class="col-sm-4">Nilai Total PO</dt>
+                                            <dd class="col-sm-8"><strong>Rp ${parseInt(po.total_amount || 0).toLocaleString('id-ID')}</strong></dd>
+                                            <dt class="col-sm-4">Catatan</dt>
+                                            <dd class="col-sm-8">${po.notes ? po.notes.replace(/\n/g,'<br>') : '-'}</dd>
+                                        </dl>
+                                    </div>
+                                    <div class="mb-2">
+                                        <strong>Detail Item:</strong>
+                                        <div class="table-responsive">
+                                            <table class="table table-bordered table-sm">
+                                                <thead>
+                                                    <tr>
+                                                        <th>No</th>
+                                                        <th>Kode</th>
+                                                        <th>Nama</th>
+                                                        <th>Qty</th>
+                                                        <th>Satuan</th>
+                                                        <th>Harga Satuan</th>
+                                                        <th>Subtotal</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                `;
 
                                 let grandTotal = 0;
                                 if (Array.isArray(po.items) && po.items.length > 0) {
@@ -940,32 +997,34 @@
                                         grandTotal += subtotal;
 
                                         html += `
-                                <tr>
-                                    <td>${idx + 1}</td>
-                                    <td>${item.ingredient_name || item.ingredient?.name || '-'}</td>
-                                    <td>${quantity}</td>
-                                    <td>Rp ${price.toLocaleString('id-ID')}</td>
-                                    <td>Rp ${subtotal.toLocaleString('id-ID')}</td>
-                                </tr>
-                            `;
+                                            <tr>
+                                                <td>${idx + 1}</td>
+                                                <td>${item.item_code ?? '-'}</td>
+                                                <td>${item.item_name ?? '-'}</td>
+                                                <td>${quantity}</td>
+                                                <td>${item.item_unit ?? '-'}</td>
+                                                <td>Rp ${price.toLocaleString('id-ID')}</td>
+                                                <td>Rp ${subtotal.toLocaleString('id-ID')}</td>
+                                            </tr>
+                                        `;
                                     });
                                 } else {
                                     html +=
-                                        `<tr><td colspan="5" class="text-center text-muted">Tidak ada item PO</td></tr>`;
+                                        `<tr><td colspan="7" class="text-center text-muted">Tidak ada item PO</td></tr>`;
                                 }
 
                                 html += `
-                                    </tbody>
-                                    <tfoot>
-                                        <tr>
-                                            <th colspan="4" class="text-end">Total</th>
-                                            <th>Rp ${parseInt(grandTotal).toLocaleString('id-ID')}</th>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </div>
-                        </div>
-                    `;
+                                                </tbody>
+                                                <tfoot>
+                                                    <tr>
+                                                        <th colspan="6" class="text-end">Total</th>
+                                                        <th>Rp ${parseInt(grandTotal).toLocaleString('id-ID')}</th>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                        </div>
+                                    </div>
+                                `;
 
                                 if (poDetailContent) {
                                     poDetailContent.innerHTML = html;

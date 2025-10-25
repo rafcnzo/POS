@@ -1,213 +1,136 @@
-<!DOCTYPE html>
 <html>
-
 <head>
-    <meta charset="UTF-8">
-    <title>Struk Kitchen</title>
     <style>
-        @page {
-            size: 80mm auto;
-            margin: 3mm;
-        }
-
-        body {
-            font-family: monospace;
-            font-size: 12px;
-            width: 74mm;
-            margin: 0;
-            padding: 2mm;
-            line-height: 1.3;
-        }
-
-        .receipt {
-            border: 2px solid black;
-            padding: 5mm;
-            margin-bottom: 5mm;
-            page-break-after: always;
-        }
-
-        .header {
-            border-bottom: 2px solid black;
-            padding-bottom: 3mm;
-            margin-bottom: 3mm;
-        }
-
-        .order-type {
-            font-size: 16px;
-            font-weight: bold;
-            background: black;
-            color: white;
-            padding: 2mm;
-            display: inline-block;
-        }
-
-        .order-info {
-            font-size: 10px;
-            text-align: right;
-            margin-top: 2mm;
-        }
-
-        .table-box {
-            text-align: center;
-            border: 2px solid black;
-            padding: 3mm;
-            margin: 3mm 0;
-            background: #f0f0f0;
-        }
-
-        .table-label {
-            font-size: 10px;
-        }
-
-        .table-number {
-            font-size: 24px;
-            font-weight: bold;
-            margin-top: 1mm;
-        }
-
-        .item-qty {
-            font-size: 28px;
-            font-weight: bold;
-            text-align: center;
-            margin: 3mm 0;
-        }
-
-        .item-name {
-            font-size: 16px;
-            font-weight: bold;
-            text-align: center;
-            text-transform: uppercase;
-            border: 2px solid black;
-            padding: 3mm;
-            margin: 2mm 0;
-        }
-
-        .notes-box {
-            background: #ffffcc;
-            border: 1px solid black;
-            padding: 2mm;
-            margin: 2mm 0;
-            font-size: 10px;
-        }
-
-        .notes-title {
-            font-weight: bold;
-            margin-bottom: 1mm;
-        }
-
-        .divider {
-            border-top: 1px dashed black;
-            margin: 3mm 0;
-        }
-
-        .customer-box {
-            background: #f5f5f5;
-            border: 1px solid #999;
-            padding: 2mm;
-            font-size: 10px;
-            margin: 2mm 0;
-        }
-
-        .footer {
-            text-align: center;
-            font-size: 9px;
-            border-top: 1px solid black;
-            padding-top: 2mm;
-            margin-top: 3mm;
-        }
-
-        .hidden {
-            display: none;
+        @media print {
+            @page {
+                size: 80mm auto;
+                margin: 3mm;
+            }
+            body {
+                font-size: 14px;
+                width: 74mm;
+                margin: 0;
+                padding: 2mm;
+                line-height: 1.3;
+            }
         }
     </style>
 </head>
-
 <body>
     @php
         use Carbon\Carbon;
         $items = $itemsToPrint ?? ($sale->items ?? []);
         $userName = $sale->user->name ?? '-';
-        $orderTypeText = ($sale->order_type ?? 'dine_in') === 'take_away' ? 'TAKE AWAY' : 'DINE-IN';
-        $showTable = strtolower($sale->order_type ?? 'dine_in') == 'dine_in' && !empty($sale->table_number);
-        $showQueue = strtolower($sale->order_type ?? 'dine_in') == 'take_away' && !empty($sale->queue_number ?? null);
         $trxCode = $sale->transaction_code ?? '-';
         $custName = $sale->customer_name ?? '-';
+        $settings = $settings ?? [];
     @endphp
 
-    @forelse($items as $index => $item)
-        <div class="receipt">
-            <!-- HEADER -->
-            <div class="header">
-                <div class="order-type">{{ $orderTypeText }}</div>
-                <div class="order-info">
-                    #{{ $trxCode }}<br>
-                    {{ Carbon::parse($sale->created_at ?? now())->format('d/m H:i') }}
-                </div>
+    <div class="invoice-pos">
+        <center id="top">
+            <div class="logo" style="margin-bottom: 4px;">
+               <h2>
+                   @if(!empty($Kitchen))
+                       <span style="font-size:11px; display:block; margin-top:1mm;">(KITCHEN)</span>
+                   @elseif(!empty($Bar))
+                       <span style="font-size:11px; display:block; margin-top:1mm;">(BAR)</span>
+                   @endif
+               </h2>
             </div>
+        </center>
 
-            <!-- TABLE/QUEUE -->
-            @if ($showTable)
-                <div class="table-box">
-                    <div class="table-label">MEJA</div>
-                    <div class="table-number">{{ $sale->table_number }}</div>
-                </div>
-            @endif
+        <table style="width:100%; margin-bottom: 10px; font-size:14px">
+            <tr>
+                <td>No Transaksi</td>
+                <td>:</td>
+                <td>{{ $trxCode }}</td>
+            </tr>
+            <tr>
+                <td>Order Type</td>
+                <td>:</td>
+                <td>
+                    @php
+                        if (isset($sale->order_type)) {
+                            if ($sale->order_type === 'dine_in') {
+                                $orderType = 'Dine In';
+                            } elseif ($sale->order_type === 'take_away') {
+                                $orderType = 'Take Away';
+                            } else {
+                                $orderType = $sale->order_type;
+                            }
+                        } else {
+                            $orderType = '-';
+                        }
+                    @endphp
+                    {{ $orderType }}
+                </td>
+            </tr>
+            <tr>
+                <td>No Meja</td>
+                <td>:</td>
+                <td>{{ $sale->table_number ?? '-' }}</td>
+            </tr>
+            <tr>
+                <td>Tanggal</td>
+                <td>:</td>
+                <td>
+                    @php
+                        $trxDate = isset($sale->created_at) ? Carbon::parse($sale->created_at)->format('d/m/Y H:i') : '-';
+                    @endphp
+                    {{ $trxDate }}
+                </td>
+            </tr>
+            <tr>
+                <td style="width:40%;">Kasir</td>
+                <td style="width:4%;">:</td>
+                <td>{{ $userName }}</td>
+            </tr>
+            
+        </table>
 
-            @if ($showQueue)
-                <div class="table-box">
-                    <div class="table-label">NO. ANTRIAN</div>
-                    <div class="table-number">{{ $sale->queue_number }}</div>
-                </div>
-            @endif
-
-            <!-- ITEM -->
-            <div class="item-qty">{{ $item->quantity }}x</div>
-            <div class="item-name">{{ strtoupper($item->menuItem->name ?? '-') }}</div>
-
-            <!-- MODIFIERS -->
-            @if ($item->selectedModifiers && $item->selectedModifiers->count())
-                <div class="notes-box">
-                    <div class="notes-title">MODIFIER:</div>
-                    @foreach ($item->selectedModifiers as $mod)
-                        - {{ $mod->modifier->name ?? '-' }}<br>
+        <div class="bot">
+            <table class="table-item" style="width:100%;">
+                <thead>
+                    <tr>
+                        <th style="text-align:left; width:60%;">Nama Item</th>
+                        <th style="width:10%;">&nbsp;</th>
+                        <th style="text-align:center; width:20%;">Qty</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($items as $item)
+                    <tr>
+                        <td>
+                            {{ $item->menuItem->name ?? '-' }}
+                            @if (!empty($item->selectedModifiers) && count($item->selectedModifiers))
+                                @foreach ($item->selectedModifiers as $modifier)
+                                    <br><span style="font-size:13px; padding-left:8px;">+ {{ $modifier->modifier->name ?? '-' }}</span>
+                                @endforeach
+                            @endif
+                            @if (!empty($item->notes))
+                                <br><span style="font-size:13px; padding-left:8px; font-style:italic;">{{ $item->notes }}</span>
+                            @endif
+                        </td>
+                        <td>&nbsp;</td>
+                        <td style="text-align:center;">{{ $item->quantity }}</td>
+                    </tr>
                     @endforeach
-                </div>
-            @endif
-
-            <!-- NOTES -->
-            @if (!empty($item->notes))
-                <div class="notes-box">
-                    <div class="notes-title">CATATAN:</div>
-                    {{ $item->notes }}
-                </div>
-            @endif
-
-            <div class="divider"></div>
-
-            <!-- CUSTOMER INFO -->
-            <div class="customer-box">
-                <div>Pelanggan: {{ $custName }}</div>
-                <div>Kasir: {{ $userName }}</div>
-            </div>
-
-            <!-- FOOTER -->
-            <div class="footer">
-                {{ Carbon::parse($sale->created_at ?? now())->format('d/m/Y H:i:s') }}<br>
-                Item {{ $index + 1 }}/{{ count($items) }}
-            </div>
+                </tbody>
+                <tfoot>
+                    <tr class="total-row">
+                        <td>Total Print</td>
+                        <td></td>
+                        <td style="text-align:center;">{{ count($items) }}</td>
+                    </tr>
+                </tfoot>
+            </table>
         </div>
-    @empty
-        <div style="text-align:center; padding:20px;">
-            Tidak ada item untuk dicetak
-        </div>
-    @endforelse
+    </div>
 
     <script>
-        // Small delay before print to ensure content is loaded
         setTimeout(function() {
             window.print();
         }, 100);
     </script>
 </body>
-
 </html>

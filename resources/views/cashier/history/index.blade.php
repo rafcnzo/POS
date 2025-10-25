@@ -287,234 +287,211 @@
 @endsection
 
 @section('content')
-<div class="page-content">
-    <div class="container-fluid">
-        
-        <!-- Page Header Section -->
-        <header class="page-header mb-4">
-            <div class="page-header-content">
-                <div class="d-flex align-items-center gap-3">
-                    <div class="page-icon">
-                        <i class="bi bi-clock-history"></i>
-                    </div>
-                    <div class="page-info">
-                        <h1 class="page-title mb-1">Riwayat Penjualan</h1>
-                        <p class="page-subtitle mb-0">Lihat dan telusuri riwayat transaksi penjualan</p>
+    <div class="page-content">
+        <div class="container-fluid">
+
+            <!-- Page Header Section -->
+            <header class="page-header mb-4">
+                <div class="page-header-content">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="page-icon">
+                            <i class="bi bi-clock-history"></i>
+                        </div>
+                        <div class="page-info">
+                            <h1 class="page-title mb-1">Riwayat Penjualan</h1>
+                            <p class="page-subtitle mb-0">Lihat dan telusuri riwayat transaksi penjualan</p>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </header>
+            </header>
 
-        <!-- Filter & Search Section -->
-        <section class="filter-section mb-4">
-            <div class="data-card">
-                <div class="data-card-body p-4">
-                    <form method="GET" id="filterForm">
-                        <div class="row g-3">
-                            <!-- Date Range Filters -->
-                            <div class="col-lg-3 col-md-4 col-sm-6">
-                                <label for="start_date" class="form-label">Dari Tanggal</label>
-                                <input type="date" 
-                                       name="start_date" 
-                                       id="start_date" 
-                                       class="form-control"
-                                       value="{{ request('start_date') }}"
-                                       aria-label="Tanggal mulai">
-                            </div>
+            <!-- Filter & Search Section -->
+            <section class="filter-section mb-4">
+                <div class="data-card">
+                    <div class="data-card-body p-4">
+                        <form method="GET" id="filterForm">
+                            <div class="row g-3">
+                                <!-- Date Range Filters -->
+                                <div class="col-lg-3 col-md-4 col-sm-6">
+                                    <label for="start_date" class="form-label">Dari Tanggal</label>
+                                    <input type="date" name="start_date" id="start_date" class="form-control"
+                                        value="{{ request('start_date') }}" aria-label="Tanggal mulai">
+                                </div>
 
-                            <div class="col-lg-3 col-md-4 col-sm-6">
-                                <label for="end_date" class="form-label">Sampai Tanggal</label>
-                                <input type="date" 
-                                       name="end_date" 
-                                       id="end_date" 
-                                       class="form-control"
-                                       value="{{ request('end_date') }}"
-                                       aria-label="Tanggal akhir">
-                            </div>
+                                <div class="col-lg-3 col-md-4 col-sm-6">
+                                    <label for="end_date" class="form-label">Sampai Tanggal</label>
+                                    <input type="date" name="end_date" id="end_date" class="form-control"
+                                        value="{{ request('end_date') }}" aria-label="Tanggal akhir">
+                                </div>
 
-                            <!-- Search Input -->
-                            <div class="col-lg-4 col-md-8">
-                                <label for="search" class="form-label">Cari Transaksi</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-white">
-                                        <i class="bi bi-search"></i>
-                                    </span>
-                                    <input type="text" 
-                                           name="search" 
-                                           id="search" 
-                                           class="form-control"
-                                           placeholder="Nomor transaksi atau nama kasir" 
-                                           value="{{ request('search') }}"
-                                           aria-label="Pencarian transaksi">
+                                <!-- Search Input -->
+                                <div class="col-lg-4 col-md-8">
+                                    <label for="search" class="form-label">Cari Transaksi</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text bg-white">
+                                            <i class="bi bi-search"></i>
+                                        </span>
+                                        <input type="text" name="search" id="search" class="form-control"
+                                            placeholder="Nomor transaksi atau nama kasir" value="{{ request('search') }}"
+                                            aria-label="Pencarian transaksi">
+                                    </div>
+                                </div>
+
+                                <!-- Submit Button -->
+                                <div class="col-lg-2 col-md-4">
+                                    <label class="form-label d-none d-md-block">&nbsp;</label>
+                                    <button type="submit" class="btn btn-primary w-100" aria-label="Terapkan filter">
+                                        <i class="bi bi-funnel me-1"></i>
+                                        <span>Filter</span>
+                                    </button>
                                 </div>
                             </div>
-
-                            <!-- Submit Button -->
-                            <div class="col-lg-2 col-md-4">
-                                <label class="form-label d-none d-md-block">&nbsp;</label>
-                                <button type="submit" class="btn btn-primary w-100" aria-label="Terapkan filter">
-                                    <i class="bi bi-funnel me-1"></i>
-                                    <span>Filter</span>
-                                </button>
-                            </div>
-                        </div>
-                    </form>
+                        </form>
+                    </div>
                 </div>
-            </div>
-        </section>
+            </section>
 
-        <!-- Data Table Section -->
-        <section class="table-section">
-            <div class="data-card">
-                <div class="data-card-header">
-                    <h5 class="mb-0">Daftar Transaksi</h5>
-                </div>
-
-                <div class="data-card-body">
-                    <div class="table-responsive">
-                        <table class="table data-table table-hover" id="salesHistoryTable">
-                            <thead class="table-light">
-                                <tr>
-                                    <th scope="col" class="text-center" style="width: 60px;">#</th>
-                                    <th scope="col" style="width: 150px;">No. Transaksi</th>
-                                    <th scope="col" style="width: 180px;">Tanggal/Waktu</th>
-                                    <th scope="col" style="width: 150px;">Kasir</th>
-                                    <th scope="col" class="text-end" style="width: 150px;">Total</th>
-                                    <th scope="col" class="text-center" style="width: 120px;">Status</th>
-                                    <th scope="col" class="text-center" style="width: 140px;">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody id="historyTableBody">
-                                @forelse($sales as $i => $sale)
-                                <tr>
-                                    <td class="text-center">{{ ($sales->firstItem() ?? 1) + $i }}</td>
-                                    <td>
-                                        <span class="fw-semibold text-primary">
-                                            {{ $sale->transaction_code ?? '-' }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex flex-column">
-                                            <span class="fw-medium">
-                                                {{ \Carbon\Carbon::parse($sale->created_at)->format('d M Y') }}
-                                            </span>
-                                            <small class="text-muted">
-                                                {{ \Carbon\Carbon::parse($sale->created_at)->format('H:i') }}
-                                            </small>
-                                        </div>
-                                    </td>
-                                    <td>{{ $sale->user->name ?? '-' }}</td>
-                                    <td class="text-end fw-semibold">
-                                        Rp {{ number_format($sale->total_amount, 0, ',', '.') }}
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="badge bg-success-subtle text-success">
-                                            {{ ucfirst($sale->status) }}
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <button type="button"
-                                                class="btn btn-info btn-sm btnDetailHistory"
-                                                data-id="{{ $sale->id }}"
-                                                aria-label="Lihat detail transaksi {{ $sale->transaction_code }}">
-                                            <i class="bi bi-eye me-1"></i>
-                                            Detail
-                                        </button>
-                                    </td>
-                                </tr>
-                                @empty
-                                <tr>
-                                    <td colspan="7">
-                                        <div class="empty-state text-center py-5">
-                                            <div class="empty-icon mb-3">
-                                                <i class="bi bi-clock-history display-1 text-muted"></i>
-                                            </div>
-                                            <h4 class="text-muted mb-2">Belum Ada Riwayat Transaksi</h4>
-                                            <p class="text-muted mb-0">
-                                                Belum ada transaksi yang selesai.
-                                            </p>
-                                        </div>
-                                    </td>
-                                </tr>
-                                @endforelse
-                            </tbody>
-                        </table>
+            <!-- Data Table Section -->
+            <section class="table-section">
+                <div class="data-card">
+                    <div class="data-card-header">
+                        <h5 class="mb-0">Daftar Transaksi</h5>
                     </div>
 
-                    <!-- Pagination -->
-                    @if($sales->hasPages())
-                    <nav aria-label="Navigasi halaman" class="mt-4">
-                        <div id="paginationContainer">
-                            {{ $sales->withQueryString()->links() }}
+                    <div class="data-card-body">
+                        <div class="table-responsive">
+                            <table class="table data-table table-hover" id="salesHistoryTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th scope="col" class="text-center" style="width: 60px;">#</th>
+                                        <th scope="col" style="width: 150px;">No. Transaksi</th>
+                                        <th scope="col" style="width: 180px;">Tanggal/Waktu</th>
+                                        <th scope="col" style="width: 150px;">Kasir</th>
+                                        <th scope="col" class="text-end" style="width: 150px;">Total</th>
+                                        <th scope="col" class="text-center" style="width: 120px;">Status</th>
+                                        <th scope="col" class="text-center" style="width: 140px;">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="historyTableBody">
+                                    @forelse($sales as $i => $sale)
+                                        <tr>
+                                            <td class="text-center">{{ ($sales->firstItem() ?? 1) + $i }}</td>
+                                            <td>
+                                                <span class="fw-semibold text-primary">
+                                                    {{ $sale->transaction_code ?? '-' }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex flex-column">
+                                                    <span class="fw-medium">
+                                                        {{ \Carbon\Carbon::parse($sale->created_at)->format('d M Y') }}
+                                                    </span>
+                                                    <small class="text-muted">
+                                                        {{ \Carbon\Carbon::parse($sale->created_at)->format('H:i') }}
+                                                    </small>
+                                                </div>
+                                            </td>
+                                            <td>{{ $sale->user->name ?? '-' }}</td>
+                                            <td class="text-end fw-semibold">
+                                                Rp {{ number_format($sale->total_amount, 0, ',', '.') }}
+                                            </td>
+                                            <td class="text-center">
+                                                <span class="badge bg-success-subtle text-success">
+                                                    {{ ucfirst($sale->status) }}
+                                                </span>
+                                            </td>
+                                            <td class="text-center">
+                                                <button type="button" class="btn btn-info btn-sm btnDetailHistory"
+                                                    data-id="{{ $sale->id }}"
+                                                    aria-label="Lihat detail transaksi {{ $sale->transaction_code }}">
+                                                    <i class="bi bi-eye me-1"></i>
+                                                    Detail
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    @empty
+                                        <tr>
+                                            <td colspan="7">
+                                                <div class="empty-state text-center py-5">
+                                                    <div class="empty-icon mb-3">
+                                                        <i class="bi bi-clock-history display-1 text-muted"></i>
+                                                    </div>
+                                                    <h4 class="text-muted mb-2">Belum Ada Riwayat Transaksi</h4>
+                                                    <p class="text-muted mb-0">
+                                                        Belum ada transaksi yang selesai.
+                                                    </p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
                         </div>
-                    </nav>
-                    @endif
-                </div>
-            </div>
-        </section>
 
-    </div>
-</div>
-
-<!-- Modal Detail Transaksi -->
-<div class="modal fade" 
-     id="historyDetailModal" 
-     tabindex="-1" 
-     aria-labelledby="historyDetailModalLabel"
-     aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-            
-            <!-- Modal Header -->
-            <div class="modal-header bg-light">
-                <div>
-                    <h5 class="modal-title mb-0" id="historyDetailModalLabel">
-                        Detail Transaksi
-                    </h5>
-                </div>
-                <button type="button" 
-                        class="btn-close" 
-                        data-bs-dismiss="modal" 
-                        aria-label="Tutup modal">
-                </button>
-            </div>
-
-            <!-- Modal Body -->
-            <div class="modal-body">
-                <!-- Loading State -->
-                <div id="historyDetailLoading" class="text-center py-5">
-                    <div class="spinner-border text-primary mb-3" role="status">
-                        <span class="visually-hidden">Memuat data...</span>
+                        <!-- Pagination -->
+                        @if ($sales->hasPages())
+                            <nav aria-label="Navigasi halaman" class="mt-4">
+                                <div id="paginationContainer">
+                                    {{ $sales->withQueryString()->links() }}
+                                </div>
+                            </nav>
+                        @endif
                     </div>
-                    <p class="text-muted mb-0">Memuat data transaksi...</p>
                 </div>
-
-                <!-- Content Container -->
-                <div id="historyDetailContent" style="display: none;">
-                    <!-- Data detail akan diisi via JavaScript -->
-                </div>
-            </div>
-
-            <!-- Modal Footer -->
-            <div class="modal-footer bg-light">
-                <button type="button" 
-                        class="btn btn-secondary" 
-                        data-bs-dismiss="modal">
-                    <i class="bi bi-x-circle me-1"></i>
-                    Tutup
-                </button>
-                <button type="button" 
-                        class="btn btn-primary" 
-                        id="btnPrintHistoryDetail"
-                        aria-label="Print detail transaksi">
-                    <i class="bi bi-printer me-1"></i>
-                    Print
-                </button>
-            </div>
+            </section>
 
         </div>
     </div>
-</div>
+
+    <!-- Modal Detail Transaksi -->
+    <div class="modal fade" id="historyDetailModal" tabindex="-1" aria-labelledby="historyDetailModalLabel"
+        aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+
+                <!-- Modal Header -->
+                <div class="modal-header bg-light">
+                    <div>
+                        <h5 class="modal-title mb-0" id="historyDetailModalLabel">
+                            Detail Transaksi
+                        </h5>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup modal">
+                    </button>
+                </div>
+
+                <!-- Modal Body -->
+                <div class="modal-body">
+                    <!-- Loading State -->
+                    <div id="historyDetailLoading" class="text-center py-5">
+                        <div class="spinner-border text-primary mb-3" role="status">
+                            <span class="visually-hidden">Memuat data...</span>
+                        </div>
+                        <p class="text-muted mb-0">Memuat data transaksi...</p>
+                    </div>
+
+                    <!-- Content Container -->
+                    <div id="historyDetailContent" style="display: none;">
+                        <!-- Data detail akan diisi via JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i>
+                        Tutup
+                    </button>
+                    <button type="button" class="btn btn-primary" id="btnPrintHistoryDetail"
+                        aria-label="Print detail transaksi">
+                        <i class="bi bi-printer me-1"></i>
+                        Print
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
 @endsection
 
 @push('script')
@@ -572,19 +549,19 @@
                                 </thead>
                                 <tbody>
                                     ${sale.items.map(item => `
-                                                    <tr>
-                                                        <td>${item.menu_item?.name ?? '-'}</td>
-                                                        <td>${item.quantity}</td>
-                                                        <td>Rp ${numberWithSeparator(item.price)}</td>
-                                                        <td>
-                                                            ${item.selected_modifiers && item.selected_modifiers.length > 0 
-                                                                ? item.selected_modifiers.map(sm => `<div>+ ${sm.modifier?.name ?? '-'}</div>`).join('')
-                                                                : '<small class="text-muted">-</small>'
-                                                            }
-                                                        </td>
-                                                        <td>Rp ${numberWithSeparator((item.price + ((item.selected_modifiers || []).reduce((a, s) => a + (parseInt(s.modifier?.price ?? 0)),0))) * item.quantity)}</td>
-                                                    </tr>
-                                                `).join('')}
+                                                        <tr>
+                                                            <td>${item.menu_item?.name ?? '-'}</td>
+                                                            <td>${item.quantity}</td>
+                                                            <td>Rp ${numberWithSeparator(item.price)}</td>
+                                                            <td>
+                                                                ${item.selected_modifiers && item.selected_modifiers.length > 0 
+                                                                    ? item.selected_modifiers.map(sm => `<div>+ ${sm.modifier?.name ?? '-'}</div>`).join('')
+                                                                    : '<small class="text-muted">-</small>'
+                                                                }
+                                                            </td>
+                                                            <td>Rp ${numberWithSeparator((item.price + ((item.selected_modifiers || []).reduce((a, s) => a + (parseInt(s.modifier?.price ?? 0)),0))) * item.quantity)}</td>
+                                                        </tr>
+                                                    `).join('')}
                                 </tbody>
                             </table>
                             <div>
@@ -605,11 +582,11 @@
                                 <tbody>
                                     ${sale.payments && sale.payments.length > 0 
                                         ? sale.payments.map(pay => `
-                                                        <tr>
-                                                            <td>${(pay.payment_method ?? '-').toUpperCase()}</td>
-                                                            <td>Rp ${numberWithSeparator(pay.amount ?? 0)}</td>
-                                                        </tr>
-                                                    `).join('') : '<tr><td colspan="2">-</td></tr>'}
+                                                            <tr>
+                                                                <td>${(pay.payment_method ?? '-').toUpperCase()}</td>
+                                                                <td>Rp ${numberWithSeparator(pay.amount ?? 0)}</td>
+                                                            </tr>
+                                                        `).join('') : '<tr><td colspan="2">-</td></tr>'}
                                 </tbody>
                             </table>
                         `;
@@ -628,41 +605,43 @@
                 });
             });
 
-            document.getElementById('btnPrintHistoryDetail').addEventListener('click', function() {
+            document.getElementById('btnPrintHistoryDetail').addEventListener('click', async function() {
                 if (!currentSaleId) {
                     Swal.fire('Error', 'Tidak ada transaksi yang dipilih untuk dicetak.', 'error');
                     return;
                 }
-                const url = `/cashier/sales/${currentSaleId}/print/customer`;
-
-                showLoading && showLoading('Menyiapkan struk...');
-
-                fetch(url)
-                    .then(response => {
-                        if (showLoading) hideLoading();
-                        if (response.headers.get("content-type")?.includes("text/html")) {
-                            return response.text().then(html => {
-                                const printWindow = window.open('', '_blank');
-                                printWindow.document.write(html);
-                                printWindow.document.close();
-                                printWindow.focus();
-                            });
+                try {
+                    showLoading && showLoading('Menyiapkan struk...');
+                    const response = await fetch(`/cashier/sales/${currentSaleId}/print/customer`, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
                         }
-                        return response.json();
-                    })
-                    .then(data => {
-                        if (data && data.status) {
-                            if (data.status === 'success' && data.message) {
-                                toastr && toastr.success(data.message);
-                            } else if (data.status === 'error') {
-                                Swal.fire('Error', data.message || 'Gagal mencetak struk.', 'error');
-                            }
-                        }
-                    })
-                    .catch(() => {
-                        if (showLoading) hideLoading();
-                        Swal.fire('Error', 'Gagal menghubungi server cetak.', 'error');
                     });
+
+                    if (showLoading) hideLoading();
+
+                    const result = await response.json();
+
+                    if (!result.success) {
+                        Swal.fire('Error', result.message || 'Gagal mendapatkan data struk', 'error');
+                        return;
+                    }
+
+                    // Connect QZ Tray jika belum
+                    await initQZ();
+
+                    // Print ke QZ Tray
+                    await printWithQZ(result.printer, result.html);
+
+                    toastr && toastr.success('Struk berhasil dikirim ke printer!');
+
+                } catch (err) {
+                    if (showLoading) hideLoading();
+                    console.error('Print error:', err);
+                    Swal.fire('Error', err.message || 'Gagal mencetak struk.', 'error');
+                }
             });
 
             function formatDateTime(dt) {
@@ -680,6 +659,116 @@
                 if (status === 'completed') return '<span class="badge bg-success">Completed</span>';
                 if (status === 'pending') return '<span class="badge bg-secondary">Pending</span>';
                 return '<span class="badge bg-light">' + (status ?? '-') + '</span>';
+            }
+        });
+
+        // ========== QZ TRAY CONFIGURATION ==========
+        let qzInstance = null;
+
+        async function initQZ() {
+            if (qzInstance) return qzInstance;
+
+            try {
+                if (!qz.websocket.isActive()) {
+                    await qz.websocket.connect();
+                    console.log("QZ Tray connected successfully");
+                }
+                qzInstance = qz;
+                return qzInstance;
+            } catch (err) {
+                console.error("QZ Tray connection failed:", err);
+                throw new Error("Tidak dapat terhubung ke QZ Tray. Pastikan aplikasi QZ Tray sudah berjalan.");
+            }
+        }
+
+        async function printWithQZ(printerName, htmlContent) {
+            try {
+                await initQZ();
+
+                const config = qz.configs.create(printerName, {
+                    scaleContent: false,
+                    rasterize: false,
+                    interpolation: 'bicubic',
+                    margins: {
+                        top: 0,
+                        right: 0,
+                        bottom: 0,
+                        left: 0
+                    }
+                });
+
+                const data = [{
+                    type: 'pixel',
+                    format: 'html',
+                    flavor: 'plain',
+                    data: htmlContent
+                }];
+
+                await qz.print(config, data);
+                console.log(`Print sent to ${printerName}`);
+                return true;
+            } catch (err) {
+                console.error("Print error:", err);
+                throw err;
+            }
+        }
+
+        // ========== CUSTOMER RECEIPT HANDLER ==========
+        async function handleCustomerReceipt(saleId) {
+            try {
+                Swal.fire({
+                    title: 'Mencetak Struk...',
+                    text: 'Mengirim ke printer kasir',
+                    allowOutsideClick: false,
+                    didOpen: () => Swal.showLoading()
+                });
+
+                const response = await fetch(`/cashier/print/customer/${saleId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+                    }
+                });
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.message || 'Gagal mendapatkan data struk');
+                }
+
+                // Connect QZ Tray
+                await initQZ();
+
+                // Print customer receipt
+                await printWithQZ(result.printer, result.html);
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Berhasil!',
+                    text: 'Struk telah dicetak',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+
+            } catch (error) {
+                console.error('Customer receipt print error:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Gagal Mencetak Struk',
+                    html: `
+                <p>${error.message}</p>
+                <small class="text-muted">Pastikan QZ Tray sudah berjalan dan printer terhubung.</small>
+            `,
+                    confirmButtonText: 'OK'
+                });
+            }
+        }
+
+        // ========== AUTO DISCONNECT QZ ON PAGE UNLOAD ==========
+        window.addEventListener('beforeunload', () => {
+            if (qz.websocket.isActive()) {
+                qz.websocket.disconnect();
             }
         });
     </script>

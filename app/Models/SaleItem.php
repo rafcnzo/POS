@@ -12,10 +12,9 @@ class SaleItem extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['sale_id', 'menu_item_id', 'quantity', 'price', 'subtotal','notes',];
-
-    // protected $keyType   = 'string';
-    // public $incrementing = false;
+    protected $fillable = [
+        'sale_id', 'menu_item_id', 'quantity', 'price', 'subtotal', 'notes',
+    ];
 
     public function sale(): BelongsTo
     {
@@ -24,8 +23,9 @@ class SaleItem extends Model
 
     public function menuItem(): BelongsTo
     {
-        return $this->belongsTo(MenuItem::class);
+        return $this->belongsTo(MenuItem::class, 'menu_item_id');
     }
+
     public function selectedModifiers()
     {
         return $this->hasMany(SaleItemModifier::class);

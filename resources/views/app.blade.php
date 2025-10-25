@@ -12,6 +12,10 @@
     @endphp
     <title>@yield('title', $storeName)</title>
     <link rel="icon" type="image/png" href="{{ $favicon }}">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="mobile-web-app-capable" content="yes">
     @vite(['resources/css/admin.css', 'resources/js/app.js'])
     <link rel="stylesheet" href="{{ asset('app.css') }}">
     @yield('style')
@@ -193,6 +197,7 @@
 
     <script>
         window.correctAuthPassword = @json($globalAuthPassword ?? '');
+
         function withAuth(actionToPerform) {
             // Cek jika password kosong
             if (!window.correctAuthPassword) {
@@ -232,6 +237,16 @@
             });
         }
     </script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(() => console.log('Service Worker registered'))
+                .catch(err => console.log('Service Worker failed', err));
+        }
+    </script>
+    <script src="{{ asset('js/qz-tray.js') }}"></script>
+
     @stack('script')
 </body>
 

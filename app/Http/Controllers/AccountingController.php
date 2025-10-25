@@ -1,14 +1,13 @@
 <?php
 namespace App\Http\Controllers;
 
-use App\Exports\ProfitAndLossExport;
-use App\Exports\SalesReportExport;
 use App\Exports\StockMovementExport;
 use App\Models\EnergyCost;
 use App\Models\Extra;
 use App\Models\Ffne;
 use App\Models\FfneStockAdj;
 use App\Models\Ingredient;
+use App\Models\IngredientStockAdjustment;
 use App\Models\Karyawan;
 use App\Models\Payroll;
 use App\Models\PurchaseOrder;
@@ -27,7 +26,6 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Log;
-use Maatwebsite\Excel\Facades\Excel;
 use Throwable;
 
 class AccountingController extends Controller
@@ -71,8 +69,9 @@ class AccountingController extends Controller
             $validated['jatuh_tempo2'] = null;
         } else {
             $validated['credit_limit'] = $validated['credit_limit'] ?? 0;
-            $validated['jatuh_tempo2'] = $validated['jatuh_tempo2'] ?? null;
-        }
+            $validated['jatuh_tempo1'] = $validated['jatuh_tempo1'] ?: null;
+            $validated['jatuh_tempo2'] = $validated['jatuh_tempo2'] ?: null;
+        }        
 
         try {
             if ($supplierId) {
@@ -94,7 +93,7 @@ class AccountingController extends Controller
             Log::error("Error saving supplier: " . $e->getMessage());
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Terjadi kesalahan saat menyimpan data supplier.',
+                'message' => $e->getMessage(),
             ], 500);
         }
     }
@@ -347,17 +346,17 @@ class AccountingController extends Controller
 
         $dataForExport = $sales->map(function ($sale) {
             return [
-                'No Transaksi'     => $sale->transaction_code,
-                'Tanggal'          => $sale->created_at ? Carbon::parse($sale->created_at)->format('Y-m-d H:i:s') : null,
-                'Nama Kasir'       => optional($sale->user)->name,
-                'Sub Total'        => (float) $sale->subtotal,
-                'Diskon'           => (float) $sale->discount_amount,
-                'Pajak'            => (float) $sale->tax_amount,
-                'Total'            => (float) $sale->total_amount,
-                'Status'           => $sale->status,
-                'Nama Customer'    => $sale->customer_name,
-                'Order Type'       => $sale->order_type,
-                'Tipe'             => $sale->type,
+                'No Transaksi'  => $sale->transaction_code,
+                'Tanggal'       => $sale->created_at ? Carbon::parse($sale->created_at)->format('Y-m-d H:i:s') : null,
+                'Nama Kasir'    => optional($sale->user)->name,
+                'Sub Total'     => (float) $sale->subtotal,
+                'Diskon'        => (float) $sale->discount_amount,
+                'Pajak'         => (float) $sale->tax_amount,
+                'Total'         => (float) $sale->total_amount,
+                'Status'        => $sale->status,
+                'Nama Customer' => $sale->customer_name,
+                'Order Type'    => $sale->order_type,
+                'Tipe'          => $sale->type,
             ];
         });
 
@@ -452,14 +451,12 @@ class AccountingController extends Controller
 
         return [$query, $reportTitle, $filters];
     }
+
     public function stockMovementReport(Request $request)
     {
         [$query, $filters, $reportTitle] = $this->buildStockMovementQuery($request);
 
         $movements = $query->paginate(25)->withQueryString();
-
-        // Gabungkan ingredients dan ffnes untuk dropdown
-        $allItems = collect();
 
         $ingredients = Ingredient::orderBy('name')->get()->map(function ($item) {
             return [
@@ -467,36 +464,42 @@ class AccountingController extends Controller
                 'name'         => $item->name,
                 'type'         => 'ingredient',
                 'display_name' => $item->name . ' (Bahan Baku)',
+                'stock'        => $item->stock ?? null,
+                'unit'         => $item->unit ?? null,
+                'qty'          => $item->stock ?? null, // qty = stock untuk ingredient
             ];
         });
-
         $ffnes = Ffne::orderBy('nama_ffne')->get()->map(function ($item) {
             return [
                 'id'           => $item->id,
                 'name'         => $item->nama_ffne,
                 'type'         => 'ffne',
                 'display_name' => $item->nama_ffne . ' (FFNE)',
+                'stock'        => $item->stock ?? null,
+                'unit'         => $item->satuan_ffne ?? null, // unit = satuan_ffne untuk ffne
+                'qty'          => $item->stock ?? null,       // qty = stock untuk ffne juga
             ];
         });
-
-        $allItems = $ingredients->concat($ffnes)->sortBy('name');
+        $allItems     = $ingredients->concat($ffnes)->sortBy('name');
+        $todayOpnames = $this->getTodayOpnamesQuery()->get();
 
         return view('accounting.laporan.stok.mutasi', [
-            'movements'   => $movements,
-            'filters'     => $filters,
-            'reportTitle' => $reportTitle,
-            'allItems'    => $allItems,
+            'movements'    => $movements,
+            'filters'      => $filters,
+            'reportTitle'  => $reportTitle,
+            'allItems'     => $allItems,
+            'todayOpnames' => $todayOpnames,
         ]);
     }
 
     public function stockMovementExport(Request $request, $type)
     {
-        if (! in_array($type, ['excel', 'pdf'])) {
+        if (! in_array($type, ['excel', 'pdf'])) { // 'excel' akan dihandle sbg JSON
             abort(404, "Tipe ekspor tidak valid.");
         }
 
         [$query, $filters, $reportTitle] = $this->buildStockMovementQuery($request);
-        $movements                       = $query->get(); // Ambil semua data
+        $movements                       = $query->get();
         $settings                        = Setting::pluck('value', 'key')->toArray();
         $fileName                        = 'laporan-mutasi-stok-' . Str::slug($reportTitle);
 
@@ -509,13 +512,6 @@ class AccountingController extends Controller
         }
 
         $dataForExport = $movements->map(function ($move) {
-            // Ambil satuan sesuai tipe item
-            $satuan = null;
-            if ($move->item_type === 'ingredient') {
-                $satuan = property_exists($move, 'unit') || isset($move->unit) ? $move->unit : null;
-            } elseif ($move->item_type === 'ffne') {
-                $satuan = property_exists($move, 'satuan_ffne') || isset($move->satuan_ffne) ? $move->satuan_ffne : null;
-            }
             return [
                 'Referensi' => $move->reference,
                 'Tanggal'   => Carbon::parse($move->movement_date)->format('Y-m-d H:i:s'),
@@ -523,17 +519,17 @@ class AccountingController extends Controller
                 'Tipe Item' => $move->item_type,
                 'Nama Item' => $move->name,
                 'Arah'      => $move->movement_direction,
-                'Jumlah'    => (float) $move->quantity, // Pastikan jadi angka
-                'Satuan'    => $satuan,
+                'Jumlah'    => (float) $move->quantity,
+                'Satuan'    => $move->unit, // <-- AMBIL DARI KOLOM 'unit' YANG BARU
                 'Deskripsi' => $move->description,
             ];
         });
 
         return response()->json([
             'status'      => 'success',
-            'fileName'    => $fileName . '.xlsx', // Pastikan ekstensi .xlsx
+            'fileName'    => $fileName . '.xlsx',
             'reportTitle' => $reportTitle,
-            'salesData'   => $dataForExport, // Ganti nama key agar konsisten
+            'salesData'   => $dataForExport, // Key konsisten dengan JS Laba Rugi
         ]);
     }
 
@@ -553,87 +549,56 @@ class AccountingController extends Controller
         $itemId       = $request->input('item_id');
         $itemType     = $request->input('item_type');
 
-        // Query Barang Masuk (Ingredient only) - tambahkan kolom unit
-        $stockIn = DB::table('goods_receipt_items')
-            ->join('goods_receipts', 'goods_receipts.id', '=', 'goods_receipt_items.goods_receipt_id')
-            ->join('purchase_order_items', 'purchase_order_items.id', '=', 'goods_receipt_items.purchase_order_item_id')
-            ->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_items.purchase_order_id')
-            ->join('suppliers', 'suppliers.id', '=', 'purchase_orders.supplier_id')
-            ->join('ingredients', 'ingredients.id', '=', 'purchase_order_items.ingredient_id')
+        $stockAdjIngredients = DB::table('ingredient_stock_adjustments as adj')
+            ->join('ingredients', 'ingredients.id', '=', 'adj.ingredient_id')
+            ->join('users', 'users.id', '=', 'adj.user_id')
             ->select(
-                'goods_receipts.receipt_number as reference',
-                'goods_receipts.created_at as movement_date',
+                DB::raw('"ADJ-ING-" || adj.id as reference'),
+                'adj.created_at as movement_date',
                 'ingredients.id as item_id',
                 DB::raw('"ingredient" as item_type'),
-                'ingredients.name',
-                DB::raw('"in" as movement_direction'),
-                'goods_receipt_items.quantity_received as quantity',
-                DB::raw('ingredients.unit as unit'), // Tambahkan kolom unit dari ingredients
-                DB::raw('NULL as satuan_ffne'), // Kolom satuan_ffne dikosongkan
-                DB::raw('"Dikirim Dari " || suppliers.name as description')
+                'ingredients.name as name',
+                DB::raw('CASE WHEN adj.quantity >= 0 THEN "in" ELSE "out" END as movement_direction'),
+                DB::raw('ABS(adj.quantity) as quantity'), // Tampilkan nilai absolut
+                'ingredients.unit as unit',
+                DB::raw('"[ADJ] " || adj.type || ": " || COALESCE(adj.notes, "") as description')
             )
-            ->whereBetween(DB::raw('DATE(goods_receipts.created_at)'), [$startDate, $endDate]);
+            ->whereBetween(DB::raw('DATE(adj.created_at)'), [$startDate, $endDate]);
 
-        // Query Barang Keluar - Penjualan (Ingredient only) - tambahkan kolom unit
-        $stockOutSales = DB::table('sale_items')
-            ->join('sales', 'sales.id', '=', 'sale_items.sale_id')
-            ->join('ingredient_menu_item', 'ingredient_menu_item.menu_item_id', '=', 'sale_items.menu_item_id')
-            ->join('ingredients', 'ingredients.id', '=', 'ingredient_menu_item.ingredient_id')
+        $stockAdjFfne = DB::table('ffne_stock_adjs as adj')
+            ->join('ffnes', 'ffnes.id', '=', 'adj.ffne_id')
+            ->join('users', 'users.id', '=', 'adj.user_id')
             ->select(
-                'sales.transaction_code as reference',
-                'sales.created_at as movement_date',
-                'ingredients.id as item_id',
-                DB::raw('"ingredient" as item_type'),
-                'ingredients.name',
-                DB::raw('"out" as movement_direction'),
-                DB::raw('sale_items.quantity * ingredient_menu_item.quantity as quantity'),
-                DB::raw('ingredients.unit as unit'), // Tambahkan kolom unit dari ingredients
-                DB::raw('NULL as satuan_ffne'), // Kolom satuan_ffne dikosongkan
-                DB::raw('"Pemakaian Penjualan" as description')
-            )
-            ->where('sales.status', 'completed')
-            ->whereBetween(DB::raw('DATE(sales.created_at)'), [$startDate, $endDate]);
-
-        // Query Barang Keluar - Rusak (FFNE only) - tambahkan kolom satuan_ffne
-        $stockOutDamage = DB::table('ffnes')
-            ->select(
-                DB::raw('"FFNE-R-" || ffnes.id as reference'),
-                'ffnes.updated_at as movement_date',
+                DB::raw('"ADJ-FFNE-" || adj.id as reference'),
+                'adj.created_at as movement_date',
                 'ffnes.id as item_id',
                 DB::raw('"ffne" as item_type'),
                 'ffnes.nama_ffne as name',
-                DB::raw('"out" as movement_direction'),
-                DB::raw('1 as quantity'),
-                DB::raw('NULL as unit'), // Kolom unit dikosongkan
-                'ffnes.satuan_ffne as satuan_ffne', // Tambahkan kolom satuan_ffne dari ffnes
-                DB::raw('"Barang Rusak" as description')
+                DB::raw('CASE WHEN adj.quantity >= 0 THEN "in" ELSE "out" END as movement_direction'),
+                DB::raw('ABS(adj.quantity) as quantity'),
+                'ffnes.satuan_ffne as unit',
+                DB::raw('"[ADJ] " || adj.type || ": " || COALESCE(adj.notes, "") as description')
             )
-            ->where('ffnes.kondisi_ffne', 1)
-            ->whereBetween(DB::raw('DATE(ffnes.updated_at)'), [$startDate, $endDate]);
+            ->whereBetween(DB::raw('DATE(adj.created_at)'), [$startDate, $endDate]);
 
-        // Filter berdasarkan item_id dan item_type
-        if ($itemId && $itemType) {
-            if ($itemType === 'ingredient') {
-                $stockIn->where('ingredients.id', $itemId);
-                $stockOutSales->where('ingredients.id', $itemId);
-                $stockOutDamage->whereRaw('1 = 0');
-            } elseif ($itemType === 'ffne') {
-                $stockIn->whereRaw('1 = 0');
-                $stockOutSales->whereRaw('1 = 0');
-                $stockOutDamage->where('ffnes.id', $itemId);
-            }
+        if ($itemType === 'ingredient') {
+            $stockAdjFfne->whereRaw('1 = 0'); // Hanya ambil Ingredient
+        } elseif ($itemType === 'ffne') {
+            $stockAdjIngredients->whereRaw('1 = 0'); // Hanya ambil FFNE
         }
 
-        // Gabungkan query berdasarkan movement_type
+        if ($itemId) {
+            $stockAdjIngredients->where('ingredients.id', $itemId);
+            $stockAdjFfne->where('ffnes.id', $itemId);
+        }
+
+        $query = $stockAdjIngredients->unionAll($stockAdjFfne);
+
         if ($movementType === 'in') {
-            $query = $stockIn;
+            $query->where('adj.quantity', '>=', 0);
         } elseif ($movementType === 'out') {
-            $query = $stockOutSales->unionAll($stockOutDamage);
-        } else {
-            $query = $stockIn->unionAll($stockOutSales)->unionAll($stockOutDamage);
+            $query->where('adj.quantity', '<', 0);
         }
-
-        // Wrap final query untuk ordering
         $query = DB::table(DB::raw("({$query->toSql()}) as movements"))
             ->mergeBindings($query)
             ->orderBy('movement_date', 'desc');
@@ -650,6 +615,143 @@ class AccountingController extends Controller
 
         return [$query, $filters, $reportTitle];
     }
+
+    public function submitStockOpname(Request $request)
+    {
+        $validated = $request->validate([
+            'item_id'      => 'required|integer',
+            'item_type'    => ['required', Rule::in(['ingredient', 'ffne'])],
+            'actual_stock' => 'required|numeric|min:0', // Stok fisik hasil hitungan
+            'notes'        => 'nullable|string|max:255',
+        ]);
+
+        $itemModelClass = null;
+        $logModelClass  = null;
+        $foreignKey     = '';
+
+        if ($validated['item_type'] === 'ingredient') {
+            $itemModelClass = Ingredient::class;
+            $logModelClass  = IngredientStockAdjustment::class;
+            $foreignKey     = 'ingredient_id';
+        } else { // 'ffne'
+            $itemModelClass = Ffne::class;
+            $logModelClass  = \App\Models\FfneStockAdj::class; // Pastikan namespace FfneStockAdj benar
+            $foreignKey     = 'ffne_id';
+        }
+
+        try {
+            DB::transaction(function () use ($itemModelClass, $logModelClass, $foreignKey, $validated) {
+                $item = $itemModelClass::findOrFail($validated['item_id']);
+
+                $stockBefore   = $item->stock;
+                $stockAfter    = (float) $validated['actual_stock'];
+                $adjustmentQty = $stockAfter - $stockBefore; // Ini bisa positif atau negatif
+
+                $item->stock = $stockAfter;
+                $item->save();
+
+                $logModelClass::create([
+                    $foreignKey    => $item->id,
+                    'user_id'      => Auth::id(),
+                    'type'         => 'opname',
+                    'quantity'     => $adjustmentQty, // Catat selisihnya
+                    'stock_before' => $stockBefore,
+                    'stock_after'  => $stockAfter,
+                    'notes'        => $validated['notes'] ?? 'Stock Opname',
+                ]);
+            }); // Akhir Transaksi
+
+            return response()->json(['status' => 'success', 'message' => 'Stock opname berhasil disimpan.']);
+
+        } catch (Throwable $e) {
+            Log::error("Gagal Stock Opname: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Gagal menyimpan opname: ' . $e->getMessage()], 500);
+        }
+    }
+
+    private function getTodayOpnamesQuery()
+    {
+        $today = now()->toDateString();
+
+        $opnameIngredients = DB::table('ingredient_stock_adjustments as adj')
+            ->join('ingredients', 'ingredients.id', '=', 'adj.ingredient_id')
+            ->join('users', 'users.id', '=', 'adj.user_id')
+            ->select(
+                'adj.created_at as timestamp',
+                'ingredients.name as item_name',
+                DB::raw('"Ingredient" as item_type'),
+                'adj.stock_before',
+                'adj.stock_after',
+                'adj.quantity as adjustment_qty', // <-- 'quantity'
+                'users.name as user_name',
+                'adj.notes'
+            )
+            ->where('adj.type', 'opname')
+            ->whereDate('adj.created_at', $today);
+
+        $opnameFfne = DB::table('ffne_stock_adjs as adj')
+            ->join('ffnes', 'ffnes.id', '=', 'adj.ffne_id')
+            ->join('users', 'users.id', '=', 'adj.user_id')
+            ->select(
+                'adj.created_at as timestamp',
+                'ffnes.nama_ffne as item_name',
+                DB::raw('"FFNE" as item_type'),
+                'adj.stock_before',               // <-- Sekarang sudah ada
+                'adj.stock_after',                // <-- Sekarang sudah ada
+                'adj.quantity as adjustment_qty', // <-- GANTI 'qty'
+                'users.name as user_name',
+                'adj.notes'
+            )
+            ->where('adj.type', 'opname')
+            ->whereDate('adj.created_at', $today);
+
+        return $opnameIngredients->unionAll($opnameFfne)
+            ->orderBy('timestamp', 'desc');
+    }
+
+    public function stockOpnameTodayPdf(Request $request)
+    {
+        $todayOpnames = $this->getTodayOpnamesQuery()->get();
+        $reportTitle  = "Laporan Detail Stock Opname - " . now()->translatedFormat('d F Y');
+        $settings     = Setting::pluck('value', 'key')->toArray();
+        $fileName     = 'laporan-opname-' . now()->format('Y-m-d') . '.pdf';
+
+        // Buat view baru untuk print PDF
+        $pdf = Pdf::loadView(
+            'accounting.laporan.stok._print_opname_today', // <-- View baru
+            compact('todayOpnames', 'reportTitle', 'settings')
+        )->setPaper('a4', 'landscape'); // Landscape agar muat
+
+        return $pdf->download($fileName);
+    }
+
+    public function stockOpnameTodayExcel(Request $request)
+    {
+        $todayOpnames = $this->getTodayOpnamesQuery()->get();
+        $reportTitle  = "Laporan Detail Stock Opname - " . now()->translatedFormat('d F Y');
+        $fileName     = 'laporan-opname-' . now()->format('Y-m-d') . '.xlsx';
+
+        $dataForExport = $todayOpnames->map(function ($item) {
+            return [
+                'Waktu'         => Carbon::parse($item->timestamp)->format('H:i:s'),
+                'Nama Item'     => $item->item_name,
+                'Tipe'          => $item->item_type,
+                'Stok Sistem'   => (float) $item->stock_before,
+                'Stok Fisik'    => (float) $item->stock_after,
+                'Selisih (Qty)' => (float) $item->adjustment_qty,
+                'User Opname'   => $item->user_name,
+                'Catatan'       => $item->notes,
+            ];
+        });
+
+        return response()->json([
+            'status'      => 'success',
+            'fileName'    => $fileName,
+            'reportTitle' => $reportTitle,
+            'salesData'   => $dataForExport, // Pakai key 'salesData' agar JS konsisten
+        ]);
+    }
+
     public function payrollIndex(Request $request)
     {
         $bulan = $request->input('bulan', date('m'));
@@ -769,113 +871,301 @@ class AccountingController extends Controller
 
     private function getProfitAndLossData(string $startDate, string $endDate)
     {
-        $alert = [];
-        // 1. Hitung Total Pendapatan (Revenue)
+        $alert        = [];
+        $hppBreakdown = [];
+
+        // ==================== REVENUE ====================
         $totalRevenue = Sale::whereBetween('created_at', [$startDate, $endDate])
             ->where('status', 'completed')
+            ->where('type', Sale::TYPE_REGULAR)
             ->sum('total_amount');
 
-        // 2. Hitung Total Harga Pokok Penjualan (HPP/COGS)
-        $saleItems = SaleItem::whereHas('sale', function ($query) use ($startDate, $endDate) {
-            $query->whereBetween('created_at', [$startDate, $endDate])
-                ->where('status', 'completed');
-        })->with('menuItem.ingredients.purchaseOrderItems')->get();
+        // Validasi: Check transaksi dengan nilai 0
+        $zeroSales = Sale::whereBetween('created_at', [$startDate, $endDate])
+            ->where('status', 'completed')
+            ->where('type', Sale::TYPE_REGULAR)
+            ->where('total_amount', 0)
+            ->count();
 
-        $totalHpp = $saleItems->sum(function ($saleItem) use (&$alert) {
-            if (!$saleItem->menuItem) {
-                $message = "Sale Item ID {$saleItem->id} tidak memiliki menu terkait";
-                $alert[] = $message;
+        if ($zeroSales > 0) {
+            $alert[] = "⚠️ Terdapat {$zeroSales} transaksi dengan nilai Rp 0";
+        }
+
+        // ==================== HPP REGULAR SALES ====================
+        $saleItems = SaleItem::select('id', 'menu_item_id', 'quantity')
+            ->whereHas('sale', function ($query) use ($startDate, $endDate) {
+                $query->whereBetween('created_at', [$startDate, $endDate])
+                    ->where('status', 'completed')
+                    ->where('type', Sale::TYPE_REGULAR);
+            })
+            ->with([
+                'menuItem' => function ($q) {
+                    $q->select('id', 'name', 'menu_category_id')
+                        ->with([
+                            'menuCategory:id,name',
+                            'ingredients:id,name,cost_price',
+                        ]);
+                },
+            ])
+            ->get();
+
+        $totalHpp = $saleItems->sum(function ($saleItem) use (&$alert, &$hppBreakdown) {
+            // Validasi: Menu Item tidak ada
+            if (! $saleItem->menuItem) {
+                $alert[] = "❌ Sale Item ID {$saleItem->id} tidak memiliki menu (menuItem) terkait";
                 return 0;
             }
-            if ($saleItem->menuItem->ingredients->isEmpty()) {
-                $message = "Menu '{$saleItem->menuItem->name}' tidak memiliki bahan baku";
-                $alert[] = $message;
+
+            // Validasi: Quantity invalid
+            if ($saleItem->quantity <= 0) {
+                $alert[] = "❌ Sale Item ID {$saleItem->id} memiliki quantity invalid: {$saleItem->quantity}";
+                return 0;
             }
+
+            // Validasi: Ingredients kosong
+            if ($saleItem->menuItem->ingredients->isEmpty()) {
+                $alert[] = "⚠️ Menu '{$saleItem->menuItem->name}' tidak memiliki resep (ingredients)";
+                return 0;
+            }
+
+            // Hitung HPP per menu item
             $costPerMenuItem = $saleItem->menuItem->ingredients->sum(function ($ingredient) use (&$alert, $saleItem) {
                 $averageCost = $ingredient->getAverageCost();
                 if ($averageCost == 0) {
-                    $message = "Bahan '{$ingredient->name}' pada menu '{$saleItem->menuItem->name}' belum ada harga pembelian";
-                    $alert[] = $message;
+                    $alert[] = "💰 Bahan '{$ingredient->name}' pada menu '{$saleItem->menuItem->name}' belum ada harga (cost_price)";
                 }
-                $quantityUsed = $ingredient->pivot->quantity;
+
+                $quantityUsed = $ingredient->pivot->quantity ?? 0;
+
+                if ($quantityUsed <= 0) {
+                    $alert[] = "⚠️ Bahan '{$ingredient->name}' pada menu '{$saleItem->menuItem->name}' memiliki quantity invalid dalam resep";
+                }
+
                 return $averageCost * $quantityUsed;
             });
+
+            $totalCost = $costPerMenuItem * $saleItem->quantity;
+
+            // Breakdown HPP per category
+            $categoryName = $saleItem->menuItem->menuCategory->name ?? 'Tanpa Kategori';
+
+            if (! isset($hppBreakdown[$categoryName])) {
+                $hppBreakdown[$categoryName] = [
+                    'category'       => $categoryName,
+                    'total_hpp'      => 0,
+                    'items_count'    => 0,
+                    'total_quantity' => 0,
+                ];
+            }
+
+            $hppBreakdown[$categoryName]['total_hpp'] += $totalCost;
+            $hppBreakdown[$categoryName]['items_count'] += 1;
+            $hppBreakdown[$categoryName]['total_quantity'] += $saleItem->quantity;
+
             return $costPerMenuItem * $saleItem->quantity;
         });
 
-        // 3. Hitung Total Beban Operasional (Operational Expenses)
-        // A. Payroll
-        $startMonth = Carbon::parse($startDate)->format('Y-m');
-        $endMonth = Carbon::parse($endDate)->format('Y-m');
-        $totalPayroll = Payroll::whereRaw("
-            printf('%04d-%02d', tahun, bulan) BETWEEN ? AND ?
-        ", [$startMonth, $endMonth])
-        ->sum('nominal_gaji');
+        // ==================== EMPLOYEE MEAL COST (FIXED BUG) ====================
+        $employeeSaleItems = SaleItem::select('id', 'menu_item_id', 'quantity')
+            ->whereHas('sale', function ($query) use ($startDate, $endDate) {
+                $query->whereBetween('created_at', [$startDate, $endDate])
+                    ->where('status', 'completed')
+                    ->where('type', Sale::TYPE_EMPLOYEE);
+            })
+            ->with([
+                'menuItem' => function ($q) {
+                    $q->select('id', 'name')
+                        ->with(['ingredients:id,name,cost_price']);
+                },
+            ])
+            ->get();
 
-        // B. Biaya Pembelian Aset FFNE
-        $totalFfnePurchaseExpense = Ffne::whereBetween('tanggal_perolehan', [$startDate, $endDate])
-            ->sum('harga');
+        $totalEmployeeMealCost = $employeeSaleItems->sum(function ($saleItem) use (&$alert) {
+            // ✅ FIX: Gunakan menuItem bukan itemable
+            if (! $saleItem->menuItem) {
+                $alert[] = "❌ Employee meal: Sale Item ID {$saleItem->id} tidak memiliki menu terkait";
+                return 0;
+            }
 
-        // C. Beban Penyesuaian FFNE (Stock Adjustment OUT) - Tetap ada
-        $totalFfneAdjustment = FfneStockAdj::where('type', 'out')
-            ->whereBetween(DB::raw('DATE(created_at)'), [$startDate, $endDate])
-            ->with('ffne')
-            ->get()
-            ->sum(function ($adj) {
-                return $adj->ffne ? ($adj->ffne->harga * $adj->qty) : 0;
+            // Validasi: Quantity invalid
+            if ($saleItem->quantity <= 0) {
+                $alert[] = "❌ Employee meal: Sale Item ID {$saleItem->id} memiliki quantity invalid";
+                return 0;
+            }
+
+            if ($saleItem->menuItem->ingredients->isEmpty()) {
+                $alert[] = "⚠️ Employee meal: Menu '{$saleItem->menuItem->name}' tidak memiliki resep";
+                return 0;
+            }
+
+            $costPerMenuItem = $saleItem->menuItem->ingredients->sum(function ($ingredient) use (&$alert, $saleItem) {
+                $averageCost = $ingredient->getAverageCost(); // <-- Gunakan HPP rata-rata
+                $quantityUsed = $ingredient->pivot->quantity;
+                return $averageCost * $quantityUsed;
             });
 
-        // D. Beban Energi
-        $totalEnergyCost = EnergyCost::whereBetween('period', [$startDate, $endDate])
-            ->sum('cost');
+            return $costPerMenuItem * $saleItem->quantity;
+        });
 
-        // E. Beban Tambahan (Extras)
-        $totalExtrasCost = Extra::whereNull('reference_id')
-            ->whereBetween('tanggal', [$startDate, $endDate])
-            ->sum('harga');
-
-        // 4. Kalkulasi Laba
-        $grossProfit = $totalRevenue - $totalHpp;
-
-        $totalOperationalExpenses = $totalPayroll
-            + $totalFfnePurchaseExpense
-            + $totalEnergyCost
-            + $totalExtrasCost
-            + $totalFfneAdjustment;
-        $netProfit = $grossProfit - $totalOperationalExpenses;
-
-        // 5. Susun detail beban
+        // ==================== EXPENSE DETAILS ====================
         $expenseDetails = [];
+
+        // 1. Payroll
+        $startMonth   = date('Y-m', strtotime($startDate));
+        $endMonth     = date('Y-m', strtotime($endDate));
+        $totalPayroll = Payroll::whereRaw("printf('%04d-%02d', tahun, bulan) BETWEEN ? AND ?", [$startMonth, $endMonth])
+            ->sum('nominal_gaji');
+
         if ($totalPayroll > 0) {
-            $expenseDetails[] = ['label' => 'Beban Gaji (Payroll)', 'value' => $totalPayroll];
+            $expenseDetails[] = [
+                'label'   => 'Beban Gaji (Payroll)',
+                'value'   => $totalPayroll,
+                'details' => [],
+                'icon'    => 'bi-people-fill',
+                'color'   => 'primary',
+            ];
         }
-        // +++ DITAMBAHKAN +++
-        if ($totalFfnePurchaseExpense > 0) {
-            $expenseDetails[] = ['label' => 'Beban Pembelian Aset (FF&E)', 'value' => $totalFfnePurchaseExpense];
+
+        // 2. Employee Meal Cost
+        if ($totalEmployeeMealCost > 0) {
+            $expenseDetails[] = [
+                'label'   => 'Beban Makan Karyawan (HPP)',
+                'value'   => $totalEmployeeMealCost,
+                'details' => [],
+                'icon'    => 'bi-egg-fried',
+                'color'   => 'warning',
+            ];
         }
-        if ($totalEnergyCost > 0) {
-            $expenseDetails[] = ['label' => 'Beban Energi', 'value' => $totalEnergyCost];
+
+        // 3. FFNE Adjustments
+        $ffneAdjustments = FfneStockAdj::whereIn('type', ['waste', 'usage', 'adjustment'])
+            ->whereBetween(DB::raw('DATE(created_at)'), [$startDate, $endDate])
+            ->with('ffne:id,nama_ffne,harga')
+            ->get();
+
+        $totalFfneAdjustment = 0;
+        $ffneAdjDetails      = [];
+
+        foreach ($ffneAdjustments as $adj) {
+            if ($adj->ffne && $adj->qty != 0) {
+                $cost = abs($adj->qty * $adj->ffne->harga);
+                $totalFfneAdjustment += $cost;
+
+                $ffneAdjDetails[] = [
+                    'Nama Barang'  => $adj->ffne->nama_ffne,
+                    'Tipe'         => ucfirst($adj->type),
+                    'Qty'          => $adj->qty,
+                    'Harga Satuan' => (float) $adj->ffne->harga,
+                    'Total Beban'  => $cost,
+                ];
+            }
         }
-        if ($totalExtrasCost > 0) {
-            $expenseDetails[] = ['label' => 'Beban Tambahan (Extras)', 'value' => $totalExtrasCost];
-        }
+
         if ($totalFfneAdjustment > 0) {
-            $expenseDetails[] = ['label' => 'Beban Penyesuaian Stok FFNE', 'value' => $totalFfneAdjustment];
+            $expenseDetails[] = [
+                'label'   => 'Beban Stok FFNE (Rusak/Dipakai/Opname)',
+                'value'   => $totalFfneAdjustment,
+                'details' => $ffneAdjDetails,
+                'icon'    => 'bi-box-seam',
+                'color'   => 'danger',
+            ];
         }
 
-        // 6. Return data
-        return [
-            'revenue' => ['label' => 'Total Pendapatan', 'value' => $totalRevenue],
-            'hpp' => ['label' => 'Total HPP', 'value' => $totalHpp, 'has_alert' => count($alert) > 0],
-            'alert' => array_unique($alert),
-            'gross_profit' => ['label' => 'Laba Kotor', 'value' => $grossProfit],
-            'expenses' => [
-                'label' => 'Total Beban Operasional',
-                'value' => $totalOperationalExpenses,
-                'details' => $expenseDetails
-            ],
+        // 4. Energy Cost
+        $totalEnergyCost = EnergyCost::whereBetween('period', [$startDate, $endDate])->sum('cost');
 
-            'net_profit' => ['label' => 'Laba Bersih', 'value' => $netProfit]
+        if ($totalEnergyCost > 0) {
+            $expenseDetails[] = [
+                'label'   => 'Beban Energi',
+                'value'   => $totalEnergyCost,
+                'details' => [],
+                'icon'    => 'bi-lightning-charge-fill',
+                'color'   => 'info',
+            ];
+        }
+
+        // 5. Extras (Service & Assets)
+        $extras = Extra::whereBetween('tanggal', [$startDate, $endDate])
+            ->with('ffne:id,nama_ffne')
+            ->get();
+
+        $totalExtrasCost = $extras->sum('harga');
+        $extrasDetails   = [];
+
+        if ($totalExtrasCost > 0) {
+            $extrasDetails = $extras->map(function ($extra) {
+                return [
+                    'Nama Aset'   => $extra->ffne->nama_ffne ?? 'N/A',
+                    'Nama Servis' => $extra->nama,
+                    'Tanggal'     => $extra->tanggal->format('d/m/Y'),
+                    'Keterangan'  => $extra->keterangan,
+                    'Biaya'       => (float) $extra->harga,
+                ];
+            })->toArray();
+
+            $expenseDetails[] = [
+                'label'   => 'Beban Servis & Extra (Aset)',
+                'value'   => $totalExtrasCost,
+                'details' => $extrasDetails,
+                'icon'    => 'bi-tools',
+                'color'   => 'secondary',
+            ];
+        }
+
+        // ==================== CALCULATIONS ====================
+        $grossProfit              = $totalRevenue - $totalHpp;
+        $totalOperationalExpenses = array_sum(array_column($expenseDetails, 'value'));
+        $netProfit                = $grossProfit - $totalOperationalExpenses;
+
+        // ==================== METRICS ====================
+        $metrics = [
+            'gross_margin_percentage'  => $totalRevenue > 0
+                ? round(($grossProfit / $totalRevenue) * 100, 2)
+                : 0,
+            'net_margin_percentage'    => $totalRevenue > 0
+                ? round(($netProfit / $totalRevenue) * 100, 2)
+                : 0,
+            'expense_to_revenue_ratio' => $totalRevenue > 0
+                ? round(($totalOperationalExpenses / $totalRevenue) * 100, 2)
+                : 0,
+            'hpp_to_revenue_ratio'     => $totalRevenue > 0
+                ? round(($totalHpp / $totalRevenue) * 100, 2)
+                : 0,
+        ];
+
+        // ==================== RETURN DATA ====================
+        return [
+            'revenue'       => [
+                'label' => 'Total Pendapatan (Regular)',
+                'value' => (float) $totalRevenue,
+            ],
+            'hpp'           => [
+                'label'     => 'Total HPP (Regular)',
+                'value'     => (float) $totalHpp,
+                'has_alert' => count($alert) > 0,
+                'breakdown' => array_values($hppBreakdown), // HPP Breakdown per category
+            ],
+            'alert'         => array_unique($alert),
+            'alert_summary' => [
+                'total'    => count(array_unique($alert)),
+                'critical' => count(array_filter($alert, fn($a) => str_contains($a, '❌'))),
+                'warning'  => count(array_filter($alert, fn($a) => str_contains($a, '⚠️'))),
+                'info'     => count(array_filter($alert, fn($a) => str_contains($a, '💰'))),
+            ],
+            'gross_profit'  => [
+                'label' => 'Laba Kotor (Pendapatan - HPP)',
+                'value' => (float) $grossProfit,
+            ],
+            'expenses'      => [
+                'label'   => 'Total Beban Operasional',
+                'value'   => (float) $totalOperationalExpenses,
+                'details' => $expenseDetails,
+            ],
+            'net_profit'    => [
+                'label' => 'Laba Bersih (Laba Kotor - Beban)',
+                'value' => (float) $netProfit,
+            ],
+            'metrics'       => $metrics,
         ];
     }
 
@@ -911,7 +1201,229 @@ class AccountingController extends Controller
         $startDate = $validated['start_date'];
         $endDate   = $validated['end_date'];
 
-        $fileName = 'laporan-laba-rugi-' . $startDate . '-sampai-' . $endDate . '.xlsx';
-        return Excel::download(new ProfitAndLossExport($startDate, $endDate), $fileName);
+        $summary     = $this->getProfitAndLossData($startDate, $endDate);
+        $reportTitle = "Laporan Laba Rugi Periode " . Carbon::parse($startDate)->translatedFormat('d F Y') . " - " . Carbon::parse($endDate)->translatedFormat('d F Y');
+        $fileName    = 'laporan-laba-rugi-' . $startDate . '-sampai-' . $endDate . '.xlsx';
+
+        $dataForExport = [];
+
+        // ==================== 1. PENDAPATAN ====================
+        $dataForExport[] = ['Akun' => '═══════════════════════════════════════', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => 'PENDAPATAN', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => '═══════════════════════════════════════', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = [
+            'Akun'      => '  ' . $summary['revenue']['label'],
+            'Deskripsi' => 'Penjualan regular periode ' . Carbon::parse($startDate)->format('d/m/Y') . ' - ' . Carbon::parse($endDate)->format('d/m/Y'),
+            'Debit'     => '',
+            'Kredit'    => $summary['revenue']['value'],
+        ];
+        $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = [
+            'Akun'      => 'TOTAL PENDAPATAN',
+            'Deskripsi' => '',
+            'Debit'     => '',
+            'Kredit'    => $summary['revenue']['value'],
+        ];
+        $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+
+        // ==================== 2. HPP ====================
+        $dataForExport[] = ['Akun' => '═══════════════════════════════════════', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => 'HARGA POKOK PENJUALAN (HPP)', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => '═══════════════════════════════════════', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+
+        // HPP Breakdown per Category
+        if (! empty($summary['hpp']['breakdown'])) {
+            foreach ($summary['hpp']['breakdown'] as $category) {
+                $dataForExport[] = [
+                    'Akun'      => '  HPP - ' . $category['category'],
+                    'Deskripsi' => $category['items_count'] . ' item menu, ' . $category['total_quantity'] . ' porsi terjual',
+                    'Debit'     => $category['total_hpp'],
+                    'Kredit'    => '',
+                ];
+            }
+            $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        }
+
+        $dataForExport[] = [
+            'Akun'      => 'TOTAL HPP',
+            'Deskripsi' => 'Rasio HPP: ' . $summary['metrics']['hpp_to_revenue_ratio'] . '%',
+            'Debit'     => $summary['hpp']['value'],
+            'Kredit'    => '',
+        ];
+        $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+
+        // ==================== 3. LABA KOTOR ====================
+        $dataForExport[] = ['Akun' => '───────────────────────────────────────', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = [
+            'Akun'      => 'LABA KOTOR',
+            'Deskripsi' => 'Margin Kotor: ' . $summary['metrics']['gross_margin_percentage'] . '%',
+            'Debit'     => '',
+            'Kredit'    => $summary['gross_profit']['value'],
+        ];
+        $dataForExport[] = ['Akun' => '───────────────────────────────────────', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+
+        // ==================== 4. BEBAN OPERASIONAL ====================
+        $dataForExport[] = ['Akun' => '═══════════════════════════════════════', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => 'BEBAN OPERASIONAL', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => '═══════════════════════════════════════', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+
+        foreach ($summary['expenses']['details'] as $expense) {
+            $dataForExport[] = [
+                'Akun'      => '  ' . $expense['label'],
+                'Deskripsi' => '',
+                'Debit'     => $expense['value'],
+                'Kredit'    => '',
+            ];
+
+            // Detail breakdown untuk setiap beban
+            if (! empty($expense['details'])) {
+                foreach ($expense['details'] as $detail) {
+                    // Format detail berdasarkan tipe beban
+                    if (isset($detail['Nama Barang'])) {
+                        // FFNE Adjustments
+                        $desc = sprintf(
+                            "%s | %s | Qty: %s | @Rp %s",
+                            $detail['Nama Barang'],
+                            $detail['Tipe'],
+                            $detail['Qty'],
+                            number_format($detail['Harga Satuan'], 0, ',', '.')
+                        );
+                        $amount = $detail['Total Beban'];
+                    } elseif (isset($detail['Nama Aset'])) {
+                        // Extras (Service & Assets)
+                        $desc = sprintf(
+                            "%s - %s | %s | %s",
+                            $detail['Nama Aset'],
+                            $detail['Nama Servis'],
+                            $detail['Tanggal'],
+                            $detail['Keterangan']
+                        );
+                        $amount = $detail['Biaya'];
+                    } else {
+                        // Fallback untuk format lain
+                        $desc = collect($detail)
+                            ->map(fn($val, $key) => "$key: " . (is_numeric($val) ? number_format($val, 0, ',', '.') : $val))
+                            ->join(' | ');
+                        $amount = '';
+                    }
+
+                    $dataForExport[] = [
+                        'Akun'      => '',
+                        'Deskripsi' => '    • ' . $desc,
+                        'Debit'     => $amount,
+                        'Kredit'    => '',
+                    ];
+                }
+            }
+            $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        }
+
+        $dataForExport[] = [
+            'Akun'      => 'TOTAL BEBAN OPERASIONAL',
+            'Deskripsi' => 'Rasio Beban: ' . $summary['metrics']['expense_to_revenue_ratio'] . '%',
+            'Debit'     => $summary['expenses']['value'],
+            'Kredit'    => '',
+        ];
+        $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+
+        // ==================== 5. LABA BERSIH ====================
+        $dataForExport[] = ['Akun' => '═══════════════════════════════════════', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = [
+            'Akun'      => 'LABA BERSIH',
+            'Deskripsi' => 'Margin Bersih: ' . $summary['metrics']['net_margin_percentage'] . '%',
+            'Debit'     => '',
+            'Kredit'    => $summary['net_profit']['value'],
+        ];
+        $dataForExport[] = ['Akun' => '═══════════════════════════════════════', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+
+        // ==================== 6. RINGKASAN METRICS ====================
+        $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => 'RINGKASAN ANALISIS KEUANGAN', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => '───────────────────────────────────────', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = [
+            'Akun'      => '  Gross Margin',
+            'Deskripsi' => 'Persentase laba kotor terhadap pendapatan',
+            'Debit'     => '',
+            'Kredit'    => $summary['metrics']['gross_margin_percentage'] . '%',
+        ];
+        $dataForExport[] = [
+            'Akun'      => '  Net Margin',
+            'Deskripsi' => 'Persentase laba bersih terhadap pendapatan',
+            'Debit'     => '',
+            'Kredit'    => $summary['metrics']['net_margin_percentage'] . '%',
+        ];
+        $dataForExport[] = [
+            'Akun'      => '  Expense Ratio',
+            'Deskripsi' => 'Persentase beban operasional terhadap pendapatan',
+            'Debit'     => '',
+            'Kredit'    => $summary['metrics']['expense_to_revenue_ratio'] . '%',
+        ];
+        $dataForExport[] = [
+            'Akun'      => '  HPP Ratio',
+            'Deskripsi' => 'Persentase HPP terhadap pendapatan',
+            'Debit'     => '',
+            'Kredit'    => $summary['metrics']['hpp_to_revenue_ratio'] . '%',
+        ];
+
+        // ==================== 7. ALERT & WARNINGS ====================
+        if (! empty($summary['alert'])) {
+            $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+            $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+            $dataForExport[] = ['Akun' => 'PERINGATAN & CATATAN', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+            $dataForExport[] = ['Akun' => '───────────────────────────────────────', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+            $dataForExport[] = [
+                'Akun'      => 'Summary',
+                'Deskripsi' => sprintf(
+                    'Total: %d peringatan (Critical: %d, Warning: %d, Info: %d)',
+                    $summary['alert_summary']['total'],
+                    $summary['alert_summary']['critical'],
+                    $summary['alert_summary']['warning'],
+                    $summary['alert_summary']['info']
+                ),
+                'Debit'     => '',
+                'Kredit'    => '',
+            ];
+            $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+
+            foreach ($summary['alert'] as $index => $alert) {
+                $dataForExport[] = [
+                    'Akun'      => ($index + 1),
+                    'Deskripsi' => $alert,
+                    'Debit'     => '',
+                    'Kredit'    => '',
+                ];
+            }
+        }
+
+        // ==================== 8. FOOTER ====================
+        $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = ['Akun' => '', 'Deskripsi' => '', 'Debit' => '', 'Kredit' => ''];
+        $dataForExport[] = [
+            'Akun'      => '--- End of Report ---',
+            'Deskripsi' => 'Generated by Restaurant POS System',
+            'Debit'     => '',
+            'Kredit'    => '',
+        ];
+
+        // ==================== 9. RESPONSE JSON ====================
+        return response()->json([
+            'status'      => 'success',
+            'fileName'    => $fileName,
+            'reportTitle' => $reportTitle,
+            'salesData'   => $dataForExport,
+            'metadata'    => [
+                'period_start'   => Carbon::parse($startDate)->format('Y-m-d'),
+                'period_end'     => Carbon::parse($endDate)->format('Y-m-d'),
+                'generated_at'   => now()->toIso8601String(),
+                'total_revenue'  => $summary['revenue']['value'],
+                'total_hpp'      => $summary['hpp']['value'],
+                'gross_profit'   => $summary['gross_profit']['value'],
+                'total_expenses' => $summary['expenses']['value'],
+                'net_profit'     => $summary['net_profit']['value'],
+                'metrics'        => $summary['metrics'],
+            ],
+        ]);
     }
 }

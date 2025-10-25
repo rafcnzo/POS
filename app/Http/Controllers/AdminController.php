@@ -10,14 +10,18 @@ use App\Models\PurchaseOrder;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Setting;
+use App\Models\AllowedIp;
 use App\Models\Supplier;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage as FacadesStorage;
 use Illuminate\Support\Str;
-use Native\Laravel\Facades\Window;
 use Spatie\Permission\Models\Permission;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Cache;
+use Throwable;
 use Spatie\Permission\Models\Role;
 
 class AdminController extends Controller
@@ -25,7 +29,7 @@ class AdminController extends Controller
     public function index()
     {
         $totalIngredients = Ingredient::count();
-        $pendingPO        = PurchaseOrder::where('status', 'pending')->count();
+        $pendingPO        = PurchaseOrder::where('status', 'diproses')->count();
         $totalSuppliers   = Supplier::count();
 
         $currentMonth  = now()->month;
@@ -35,10 +39,14 @@ class AdminController extends Controller
 
         $totalSales = Sale::whereMonth('created_at', $currentMonth)
             ->whereYear('created_at', $currentYear)
+            ->where('status', 'completed')
+            ->where('type', 'regular')
             ->sum('total_amount');
 
         $totalSalesLastMonth = Sale::whereMonth('created_at', $previousMonth)
             ->whereYear('created_at', $previousYear)
+            ->where('status', 'completed')
+            ->where('type', 'regular')
             ->sum('total_amount');
 
         if ($totalSalesLastMonth > 0) {
@@ -51,6 +59,7 @@ class AdminController extends Controller
 
         $totalTransactions = Sale::whereMonth('created_at', now()->month)
             ->whereYear('created_at', now()->year)
+            ->where('type', 'regular')
             ->count();
 
         $previousMonth              = now()->subMonth()->month;
@@ -72,6 +81,8 @@ class AdminController extends Controller
             $averageTransaction = round(
                 Sale::whereMonth('created_at', now()->month)
                     ->whereYear('created_at', now()->year)
+                    ->where('type', 'regular')
+                    ->where('status', 'completed')
                     ->avg('total_amount'), 0
             );
         }
@@ -99,18 +110,47 @@ class AdminController extends Controller
             }
         }
 
-        $latestPurchaseOrders = PurchaseOrder::with(['supplier', 'items.ingredient'])
+        $latestPurchaseOrders = PurchaseOrder::with([
+            'supplier',
+            'items.itemable',
+        ])
             ->orderByDesc('created_at')
             ->limit(5)
             ->get()
             ->map(function ($po) {
-                $items           = $po->items;
-                $ingredientNames = $items->pluck('ingredient.name')->take(3)->toArray();
-                $othersCount     = $items->count() - 3;
-                $desc            = implode(', ', $ingredientNames);
+                $items = $po->items;
+                // Compose item descriptions as: [qty]x [nama] @ [harga_satuan] (contoh: 15x Gula @ Rp 12.000)
+                $itemSummaries = $items->map(function ($poItem) {
+                    if (! $poItem->itemable) {
+                        return '[Item Dihapus]';
+                    }
+
+                    // Nama item
+                    if ($poItem->itemable instanceof \App\Models\Ingredient) {
+                        return $poItem->itemable->name;
+                    }
+                    else if ($poItem->itemable instanceof \App\Models\Ffne) {
+                        return $poItem->itemable->nama_ffne; // Ambil nama ffne
+                    } else {
+                        $name = '[Tipe Tidak Dikenal]';
+                    }
+
+                    // Format: 10x Gula @ Rp 12.000
+                    $qty = (int) $poItem->quantity;
+                    $unitPrice = (int) $poItem->price;
+                    $unitPriceString = 'Rp ' . number_format($unitPrice, 0, ',', '.');
+
+                    return "{$qty}x {$name} @ {$unitPriceString}";
+                });
+
+                $showItems = $itemSummaries->take(3)->toArray(); // 3 item pertama
+                $othersCount = $items->count() - 3;
+                $desc = implode(', ', $showItems);
+
                 if ($othersCount > 0) {
                     $desc .= ' (+' . $othersCount . ' lainnya)';
                 }
+
                 $desc = $desc ?: '-';
                 $time = $po->created_at ? $po->created_at->diffForHumans() : '-';
 
@@ -131,12 +171,19 @@ class AdminController extends Controller
             ->limit(5)
             ->get()
             ->map(function ($ingredient) {
-                $critical = $ingredient->stock <= 0 || $ingredient->stock <= $ingredient->minimum_stock / 2;
+                if ($ingredient->stock < $ingredient->minimum_stock) {
+                    $critical = true;
+                    $desc = 'Stok kritis - Order sekarang!';
+                } elseif ($ingredient->stock == $ingredient->minimum_stock) {
+                    $critical = false;
+                    $desc = 'Stok menipis - Perlu restock';
+                } else {
+                    $critical = false;
+                    $desc = 'Stok aman';
+                }
                 return [
                     'name'     => $ingredient->name,
-                    'desc'     => $critical
-                        ? 'Stok kritis - Order sekarang!'
-                        : 'Stok menipis - Perlu restock',
+                    'desc'     => $desc,
                     'qty'      => $ingredient->stock . ' ' . $ingredient->unit,
                     'critical' => $critical,
                 ];
@@ -149,7 +196,7 @@ class AdminController extends Controller
 
         $result = Sale::query()
             ->select(
-                DB::raw("strftime('%H', created_at) as hour_of_day"),
+                DB::raw("HOUR(created_at) as hour_of_day"),
                 DB::raw("COUNT(id) as sales_count")
             )
             ->where('status', 'completed')
@@ -178,10 +225,11 @@ class AdminController extends Controller
 
         $salesData = Sale::query()
             ->select(
-                DB::raw("strftime('%Y-%m-%d', created_at) as sale_date"),
+                DB::raw("DATE(created_at) as sale_date"),
                 DB::raw("SUM(total_amount) as daily_total")
             )
             ->where('status', 'completed')
+            ->where('type', 'regular')
             ->where('created_at', '>=', now()->subDays(6)->startOfDay())
             ->groupBy('sale_date')
             ->get()
@@ -444,33 +492,34 @@ class AdminController extends Controller
         try {
             if ($request->hasFile('store_logo')) {
                 $request->validate([
-                    'store_logo' => 'image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+                    'store_logo' => [
+                        'image',
+                        'mimes:jpeg,png,jpg,gif,svg',
+                        'max:2048',
+                        function($attribute, $value, $fail) use ($request) {
+                            $image = $request->file('store_logo');
+                            if ($image) {
+                                $dimensions = getimagesize($image->getRealPath());
+                                if ($dimensions) {
+                                    $width = $dimensions[0];
+                                    $height = $dimensions[1];
+                                    if ($width > 250 || $height > 250) {
+                                        $fail('Pixel gambar maksimal 250 x 250.');
+                                    }
+                                }
+                            }
+                        }
+                    ]
                 ]);
 
-                // LOG PATH
-                \Log::info('Storage paths:', [
-                    'storage_path'        => storage_path('app/public/logos'),
-                    'base_path'           => base_path('storage/app/public/logos'),
-                    'public_root'         => config('filesystems.disks.public.root'),
-                    'file_exists_storage' => file_exists(storage_path('app/public/logos')),
-                    'file_exists_base'    => file_exists(base_path('storage/app/public/logos')),
-                ]);
-
+                // Hapus logo lama jika ada
                 $oldLogo = Setting::where('key', 'store_logo')->value('value');
                 if ($oldLogo && FacadesStorage::disk('public')->exists($oldLogo)) {
                     FacadesStorage::disk('public')->delete($oldLogo);
                 }
 
-                // Simpan file
+                // Simpan file baru
                 $path = $request->file('store_logo')->store('logos', 'public');
-
-                // LOG HASIL
-                \Log::info('File stored:', [
-                    'path_in_db'     => $path,
-                    'full_path'      => FacadesStorage::disk('public')->path($path),
-                    'file_exists'    => FacadesStorage::disk('public')->exists($path),
-                    'physical_check' => file_exists(base_path('storage/app/public/' . $path)),
-                ]);
 
                 $setting        = Setting::where('key', 'store_logo')->firstOrNew(['key' => 'store_logo']);
                 $setting->value = $path;
@@ -482,11 +531,11 @@ class AdminController extends Controller
                     ['key' => $key],
                     ['value' => $value ?? '']
                 );
-            }
 
-            $newStoreName = Setting::where('key', 'store_name')->value('value');
-            if ($newStoreName) {
-                Window::get('main')->title($newStoreName);
+                // Jika yang diupdate adalah authorization_password, hapus cache terkait
+                if ($key === 'authorization_password') {
+                    Cache::forget('global_auth_password');
+                }
             }
 
             return response()->json([
@@ -656,5 +705,56 @@ class AdminController extends Controller
                 'message' => 'Gagal menghapus data karyawan: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    public function ipWhitelistIndex()
+    {
+        $ips = AllowedIp::latest()->paginate(20);
+        return view('admin.allowed-ips.index', compact('ips'));
+    }
+
+    public function ipWhitelistStore(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'ip' => [
+                'required',
+                'ip',
+                'unique:allowed_ips,ip,' . $request->input('id') 
+            ],
+            'label' => 'nullable|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        AllowedIp::updateOrCreate(
+            ['id' => $request->input('id')], // Kunci untuk mencari
+            [
+                'ip' => $request->input('ip'),         // Data untuk diisi
+                'label' => $request->input('label')
+            ]
+        );
+
+        Cache::forget('allowed_ips');
+
+        return response()->json(['success' => 'IP address saved successfully.']);
+    }
+
+    public function ipWhitelistShow(AllowedIp $ip)
+    {
+        return response()->json($ip);
+    }
+
+    public function ipWhitelistDestroy(AllowedIp $ip)
+    {
+        if (AllowedIp::count() === 1) {
+            return response()->json(['error' => 'Cannot delete the last IP address.'], 400);
+        }
+
+        $ip->delete();
+        Cache::forget('allowed_ips'); // Hapus cache
+
+        return response()->json(['success' => 'IP address deleted successfully.']);
     }
 }

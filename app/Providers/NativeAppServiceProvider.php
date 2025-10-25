@@ -2,10 +2,9 @@
 namespace App\Providers;
 
 use App\Models\Setting;
+use Illuminate\Support\Facades\Process;
 use Native\Laravel\Contracts\ProvidesPhpIni;
 use Native\Laravel\Facades\Window;
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Process;
 
 class NativeAppServiceProvider implements ProvidesPhpIni
 {
@@ -43,6 +42,15 @@ class NativeAppServiceProvider implements ProvidesPhpIni
     public function phpIni(): array
     {
         return [
+            'extension_dir'      => 'C:\php\ext',
+
+            'extension'          => [
+                'pdo_mysql',
+                'mysqli',
+            ],
+
+            'memory_limit'       => '512M',
+            'max_execution_time' => 60,
         ];
     }
 }

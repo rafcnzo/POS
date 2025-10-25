@@ -152,18 +152,31 @@
                         <div class="data-card-body">
                             <div class="alert-list">
                                 @forelse(($stockAlerts ?? []) as $alert)
+                                    @php
+                                        $isCritical = $alert['critical'];
+                                        $isAman = isset($alert['desc']) && strtolower($alert['desc']) === 'stok aman';
+                                    @endphp
                                     <div
-                                        class="alert-item {{ $alert['critical'] ? 'alert-danger-item' : 'alert-warning-item' }}">
+                                        class="alert-item 
+                                        {{ $isCritical ? 'alert-danger-item' : ($isAman ? 'alert-success-item' : 'alert-warning-item') }}">
                                         <div class="alert-icon">
                                             <i
-                                                class="bi {{ $alert['critical'] ? 'bi-exclamation-circle-fill' : 'bi-exclamation-triangle-fill' }}"></i>
+                                                class="bi 
+                                                {{ $isCritical
+                                                    ? 'bi-exclamation-circle-fill'
+                                                    : ($isAman
+                                                        ? 'bi-check-circle-fill'
+                                                        : 'bi-exclamation-triangle-fill') }}"></i>
                                         </div>
                                         <div class="alert-content">
                                             <div class="alert-title">{{ $alert['name'] }}</div>
                                             <div class="alert-desc">{{ $alert['desc'] }}</div>
                                         </div>
-                                        <div class="alert-stock {{ $alert['critical'] ? 'stock-critical' : 'stock-low' }}">
-                                            {{ $alert['qty'] }}</div>
+                                        <div
+                                            class="alert-stock 
+                                            {{ $isCritical ? 'stock-critical' : ($isAman ? 'stock-safe' : 'stock-low') }}">
+                                            {{ $alert['qty'] }}
+                                        </div>
                                     </div>
                                 @empty
                                     <div>Tidak ada peringatan stok.</div>
@@ -350,5 +363,26 @@
                 });
             }
         });
+
+        qz.security.setCertificatePromise(function(resolve, reject) {
+            resolve("-----BEGIN CERTIFICATE-----\nMIIC...isi sertifikat bawaan...\n-----END CERTIFICATE-----");
+        });
+
+        qz.security.setSignaturePromise(function(toSign) {
+            return function(resolve, reject) {
+                // Boleh dikosongkan dulu kalau belum pakai security
+                resolve();
+            };
+        });
+
+        qz.websocket.connect().then(() => {
+            console.log("✅ QZ Tray connected!");
+        }).catch(err => {
+            console.error("❌ Gagal konek ke QZ Tray:", err);
+        });
+
+        qz.printers.getList().then(printers => {
+            console.log("Printers ditemukan:", printers);
+        }).catch(err => console.error(err));
     </script>
 @endpush

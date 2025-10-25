@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Auth\Middleware\RedirectIfAuthenticated;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -31,36 +33,6 @@ class AppServiceProvider extends ServiceProvider
                 \Log::error('Migration/Seeding failed: ' . $e->getMessage());
             }
         }
-
-        if (config('app.env') === 'production' ||
-            str_contains(config('app.url'), '127.0.0.1:8100')) {
-
-            $storagePath = base_path('storage/app/public');
-
-            if (! file_exists($storagePath . '/logos')) {
-                @mkdir($storagePath . '/logos', 0755, true);
-            }
-
-            config(['filesystems.disks.public.root' => $storagePath]);
-        }
-
-        config(['database.connections.nativephp.database' => database_path('database.sqlite')]);
-
-        if (getenv('NATIVEPHP') === 'true') {
-            if (class_exists(\Native\Laravel\Facades\Window::class)) {
-                try {
-                    $storeName = Setting::where('key', 'store_name')->value('value') ?? config('app.name');
-                    $storeLogo = Setting::where('key', 'store_logo')->value('value');
-
-                    // Override app.name di runtime config (untuk konsistensi)
-                    config(['app.name' => $storeName]);
-
-                } catch (\Throwable $e) {
-                    \Log::error('Failed to load settings on boot: ' . $e->getMessage());
-                }
-            }
-        }
-
         if (! Session::has('fresh_start')) {
             Session::flush();                  // Buang semua session
             Session::put('fresh_start', true); // Tandai sudah reset
@@ -68,5 +40,33 @@ class AppServiceProvider extends ServiceProvider
 
         Paginator::defaultView('layouts.pagination');
         Paginator::defaultSimpleView('layouts.pagination');
+
+        RedirectIfAuthenticated::redirectUsing(function ($request) {
+            
+            // Cek jika user sudah login
+            if (Auth::check()) {
+                $user = Auth::user();
+                $url  = '';
+
+                if ($user->hasRole('Super Admin')) {
+                    $url = route('admin.index');
+                } elseif ($user->hasRole('Accounting')) {
+                    $url = route('acc.suppliers.index');
+                } elseif ($user->hasRole('HeadBar')) {
+                    $url = route('kitchen.menu.index');
+                } elseif ($user->hasRole('HeadKitchen')) {
+                    $url = route('kitchen.menu.index');
+                } elseif ($user->hasRole('Cashier')) {
+                    $url = route('cashier.index');
+                } else {
+                    // Fallback jika role tidak terdaftar
+                    $url = '/dashboard'; // Pastikan Anda punya route ini
+                }
+                
+                return $url;
+            }
+
+            return ''; 
+        });
     }
 }

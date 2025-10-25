@@ -14,9 +14,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role'       => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+            'auth'       => \Illuminate\Auth\Middleware\Authenticate::class,
+            'guest'      => \Illuminate\Auth\Middleware\RedirectIfAuthenticated::class, 
         ]);
         $middleware->web(append: [
             \Illuminate\Session\Middleware\StartSession::class,
+        ]);
+        $middleware->use([
+            \App\Http\Middleware\CheckIpWhitelist::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

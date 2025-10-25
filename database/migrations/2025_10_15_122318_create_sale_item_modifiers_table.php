@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('sale_item_modifiers', function (Blueprint $table) {
-            $table->id();
+            $table->bigIncrements('id');
             $table->foreignId('sale_item_id')->constrained('sale_items')->onDelete('cascade');
             $table->foreignId('modifier_id')->constrained('modifiers');
             $table->decimal('price', 15, 2)->comment('Harga modifier pada saat transaksi');

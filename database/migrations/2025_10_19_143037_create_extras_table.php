@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('extras', function (Blueprint $table) {
-            $table->id();
+            $table->bigIncrements('id');
             $table->foreignId('ffne_id')->constrained('ffnes')->onDelete('cascade');
             $table->string('nama');
             $table->decimal('harga', 15, 2)->default(0);

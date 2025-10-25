@@ -12,8 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('ingredient_menu_item', function (Blueprint $table) {
+            $table->engine = 'InnoDB';
             $table->id();
-            $table->foreignId('menu_item_id')->constrained('menu_items')->onDelete('cascade');
+            $table->string('menu_item_id');
+            $table->foreign('menu_item_id')->references('id')->on('menu_items')->onDelete('cascade');
             $table->foreignId('ingredient_id')->constrained('ingredients')->onDelete('cascade');
             $table->decimal('quantity', 10, 2)->comment('Jumlah bahan yang dipakai per porsi');
             $table->timestamps();

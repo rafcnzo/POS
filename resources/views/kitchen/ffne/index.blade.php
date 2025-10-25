@@ -33,7 +33,9 @@
                 <div class="stat-card stat-info">
                     <div class="stat-icon"><i class="bi bi-cash"></i></div>
                     <div class="stat-info">
-                        <h3 class="stat-value">Rp {{ number_format($ffnes->sum('harga'), 0, ',', '.') }}</h3>
+                        <h3 class="stat-value">
+                            Rp {{ number_format($ffnes->sum(function($f) { return $f->harga * $f->stock; }), 0, ',', '.') }}
+                        </h3>
                         <p class="stat-label">Total Nilai FF&E</p>
                     </div>
                 </div>
@@ -98,16 +100,7 @@
                                         </td>
                                         <td class="col-action">
                                             <div class="action-buttons">
-                                                @if ($ffne->kategori_ffne === 'Barang Habis Pakai')
-                                                    {{-- Tombol untuk mengurangi/menyesuaikan stok --}}
-                                                    <button class="btn-action btn-adj-stock" data-id="{{ $ffne->id }}"
-                                                        data-nama="{{ $ffne->nama_ffne }}"
-                                                        data-stock="{{ $ffne->stock }}"
-                                                        data-satuan="{{ $ffne->satuan_ffne }}" title="Penyesuaian Stok">
-                                                        <i class="bi bi-arrow-down-up"></i>
-                                                    </button>
-                                                @else
-                                                    {{-- Tombol "Extra" (Servis) hanya untuk Barang Tidak Habis Pakai --}}
+                                                @if ($ffne->kategori_ffne !== 'Barang Habis Pakai')
                                                     <button class="btn-action btn-extra btnExtraFfne"
                                                         data-id="{{ $ffne->id }}" data-nama="{{ $ffne->nama_ffne }}"
                                                         title="Kelola Riwayat Extra">
@@ -115,7 +108,6 @@
                                                     </button>
                                                 @endif
 
-                                                {{-- Tombol Edit --}}
                                                 <button class="btn-action btn-edit btnEditFfne"
                                                     data-id="{{ $ffne->id }}" data-kode_ffne="{{ $ffne->kode_ffne }}"
                                                     data-nama_ffne="{{ $ffne->nama_ffne }}"
@@ -308,10 +300,9 @@
         </div>
     </div>
 
-    <div class="modal fade" id="modalStockAdj" tabindex="-1" aria-labelledby="modalStockAdjLabel" aria-hidden="true">
+    {{-- <div class="modal fade" id="modalStockAdj" tabindex="-1" aria-labelledby="modalStockAdjLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content custom-modal">
-                {{-- Sesuaikan route() dengan route submit stock adj --}}
                 <form id="formStockAdj" action="{{ route('kitchen.ffne.stock.submit') }}" method="POST">
                     @csrf
                     <input type="hidden" name="ffne_id" id="adj_ffne_id">
@@ -353,7 +344,7 @@
                 </form>
             </div>
         </div>
-    </div>
+    </div> --}}
 @endsection
 
 @push('script')
@@ -383,10 +374,10 @@
             const extrasPagination = document.getElementById('extrasPagination');
             const listExtrasContainer = document.getElementById('listExtrasContainer');
             const extrasInfo = document.getElementById('extrasInfo');
-            const modalStockAdj = new bootstrap.Modal(document.getElementById('modalStockAdj'));
-            const formStockAdj = document.getElementById('formStockAdj');
-            const alertStockAdj = document.getElementById('formStockAdjAlert');
-            const btnSimpanAdj = document.getElementById('btnSimpanAdj');
+            // const modalStockAdj = new bootstrap.Modal(document.getElementById('modalStockAdj'));
+            // const formStockAdj = document.getElementById('formStockAdj');
+            // const alertStockAdj = document.getElementById('formStockAdjAlert');
+            // const btnSimpanAdj = document.getElementById('btnSimpanAdj');
 
             let currentFfneId = null;
 
@@ -535,14 +526,11 @@
                             const modalFfneLabel = document.getElementById('modalFfneLabel');
                             if (modalFfneLabel) modalFfneLabel.textContent = 'Edit Data FF&E';
 
-                            ['id', 'kode_ffne', 'nama_ffne', 'kategori_ffne', 'harga',
-                                'satuan_ffne'
-                            ]
-                            .forEach(
-                                function(field) {
+                            ['id', 'kode_ffne', 'nama_ffne', 'kategori_ffne', 'harga', 'satuan_ffne']
+                                .forEach(function(field) {
                                     const inputId = (field === 'id') ? 'ffne_id' : field;
                                     const element = document.getElementById(inputId);
-                                    if (element) {
+                                    if (element && btnEdit.dataset.hasOwnProperty(field)) {
                                         element.value = btnEdit.dataset[field];
                                     }
                                 });
@@ -550,7 +538,7 @@
                             if (kodeFfneInput) {
                                 kodeFfneInput.readOnly = true;
                             }
-                            if (kondisiCheckbox) {
+                            if (kondisiCheckbox && btnEdit.dataset.hasOwnProperty('kondisi_ffne')) {
                                 kondisiCheckbox.checked = (btnEdit.dataset.kondisi_ffne === '1');
                             }
                             if (stockAwalGroup) stockAwalGroup.style.display = 'none';
@@ -558,7 +546,20 @@
                                 stockAwalInput.removeAttribute('required');
                                 stockAwalInput.value = 0;
                             }
-                            modalFfne.show();
+                            // Only attempt to show modal if it is properly initialized
+                            if (typeof modalFfne !== "undefined" && modalFfne && typeof modalFfne.show === "function") {
+                                modalFfne.show();
+                            } else {
+                                // fallback: open modal via jQuery if possible (Bootstrap 4/5 support)
+                                const $modal = window.jQuery ? window.jQuery('#modalFfne') : null;
+                                if ($modal && typeof $modal.modal === "function") {
+                                    $modal.modal('show');
+                                } else {
+                                    // As last fallback, set display directly
+                                    const modalElem = document.getElementById('modalFfne');
+                                    if (modalElem) modalElem.style.display = 'block';
+                                }
+                            }
                         });
                     }
 

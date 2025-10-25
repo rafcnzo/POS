@@ -17,7 +17,6 @@ return new class extends Migration
             $table->string('nama_ffne');
             $table->enum('kategori_ffne', ['Barang Habis Pakai', 'Barang Tidak Habis Pakai']);
             $table->decimal('harga', 15, 2)->default(0);
-            $table->foreignId('extra_id')->nullable()->constrained('extras')->onDelete('set null');
             $table->string('satuan_ffne');
             $table->boolean('kondisi_ffne')->default(false);
             $table->timestamps();

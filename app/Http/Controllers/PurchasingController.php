@@ -1,21 +1,29 @@
 <?php
 namespace App\Http\Controllers;
 
+use App\Models\Ffne;
+use App\Models\FfneStockAdj;
 use App\Models\GoodsReceipt;
+use App\Models\GoodsReceiptItem;
 use App\Models\Ingredient;
+use App\Models\IngredientStockAdjustment;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\Setting;
 use App\Models\StoreRequest;
+use App\Models\StoreRequestItem;
 use App\Models\Supplier;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
-use File;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class PurchasingController extends Controller
 {
@@ -24,25 +32,58 @@ class PurchasingController extends Controller
         $purchaseOrders = PurchaseOrder::with(['supplier', 'storeRequest'])->latest()->get();
         $suppliers      = Supplier::orderBy('name')->get();
         $storeRequests  = StoreRequest::where('status', 'proses')->get();
-        $ingredients    = Ingredient::orderBy('name')->get(['id', 'name', 'unit']);
+        $ingredients    = Ingredient::orderBy('name')->get(['id', 'name', 'unit', 'cost_price']);
+        $ffnes          = \App\Models\Ffne::where('kategori_ffne', 'Barang Habis Pakai') // Hanya yg habis pakai
+            ->orderBy('nama_ffne')
+            ->get(['id', 'nama_ffne', 'satuan_ffne', 'harga']);
 
-        return view('purchasing.purchase_orders.index', compact('purchaseOrders', 'suppliers', 'storeRequests', 'ingredients'));
+        // Gabungkan keduanya untuk dropdown
+        $bahanbakus = $ingredients->map(function ($item) {
+            return [
+                'id'         => $item->id,
+                'name'       => $item->name,
+                'unit'       => $item->unit,
+                'cost_price' => $item->cost_price ?? 0,
+                'type'       => Ingredient::class, // Kirim Nama Kelas Lengkap
+            ];
+        })->concat(
+            $ffnes->map(function ($item) {
+                return [
+                    'id'         => $item->id,
+                    'name'       => $item->nama_ffne,
+                    'unit'       => $item->satuan_ffne,
+                    'cost_price' => $item->harga ?? 0,
+                    'type'       => Ffne::class, // Kirim Nama Kelas Lengkap
+                ];
+            })
+        )->sortBy('name'); // Urutkan berdasarkan nama gabungan
+
+        return view('purchasing.purchase_orders.index', compact(
+            'purchaseOrders',
+            'suppliers',
+            'storeRequests',
+            'ingredients',
+            'bahanbakus'
+        ));
     }
 
     public function purchaseOrderSubmit(Request $request)
     {
         $validated = $request->validate([
-            'supplier_id'           => 'required|exists:suppliers,id',
-            'store_request_id'      => 'nullable|exists:store_requests,id',
-            'notes'                 => 'nullable|string',
-            'payment_type'          => 'required|in:cash,tempo',
-            'items'                 => 'required|array|min:1',
-            'items.*.ingredient_id' => 'required|exists:ingredients,id',
-            'items.*.quantity'      => 'required|numeric|min:0.01',
-            'items.*.price'         => 'required|numeric|min:0',
+            'supplier_id'            => 'required|exists:suppliers,id',
+            'store_request_id'       => 'nullable|exists:store_requests,id',
+            'notes'                  => 'nullable|string',
+            'payment_type'           => 'required|in:petty_cash,tempo',
+            'expected_delivery_date' => 'nullable|date|after_or_equal:order_date',
+            'items'                  => 'required|array|min:1',
+            'items.*.item_id'        => 'required|integer',
+            'items.*.item_type'      => ['required', Rule::in([Ingredient::class, Ffne::class])],
+            'items.*.quantity'       => 'required|numeric|min:0.01',
+            'items.*.price'          => 'required|numeric|min:0',
         ], [
-            'items.required'     => 'Minimal harus ada 1 item barang dalam PO.',
-            'items.*.*.required' => 'Semua detail item (bahan, qty, harga) wajib diisi.',
+            'items.required'             => 'Minimal harus ada 1 item barang.',
+            'items.*.item_id.required'   => 'Item barang wajib dipilih.',
+            'items.*.item_type.required' => 'Tipe item tidak valid.',
         ]);
 
         $supplier      = Supplier::findOrFail($validated['supplier_id']);
@@ -50,27 +91,25 @@ class PurchasingController extends Controller
 
         $totalAmount = 0;
         foreach ($validated['items'] as $item) {
-            if (! is_numeric($item['quantity']) || ! is_numeric($item['price'])) {
-                throw ValidationException::withMessages(['items' => 'Qty atau Harga item tidak valid.']);
-            }
             $totalAmount += $item['quantity'] * $item['price'];
         }
 
-        if ($paymentMethod === Supplier::TYPE_TEMPO) { // Gunakan constant dari model Supplier
-                                                           // Cek Tipe Supplier
+        if ($paymentMethod === Supplier::TYPE_TEMPO) {
             if ($supplier->type !== Supplier::TYPE_TEMPO) {
                 throw ValidationException::withMessages(['supplier_id' => 'Supplier ini tidak mendukung pembayaran tempo.']);
             }
             $currentCreditLimit = Supplier::find($supplier->id)->credit_limit;
             if ($totalAmount > $currentCreditLimit) {
-                throw ValidationException::withMessages(['payment_type' => "Total PO (" . number_format($totalAmount, 0, ',', '.') . ") melebihi sisa limit kredit (" . number_format($currentCreditLimit, 0, ',', '.') . ")."]);
+                throw ValidationException::withMessages([
+                    'payment_type' => "Total PO (" . number_format($totalAmount, 0, ',', '.') . ") melebihi sisa limit kredit (" . number_format($currentCreditLimit, 0, ',', '.') . ").",
+                ]);
             }
         }
 
         try {
-            $result = DB::transaction(function () use ($validated, $supplier, $paymentMethod, $totalAmount) {
+            $result = \DB::transaction(function () use ($validated, $supplier, $paymentMethod, $totalAmount) {
                 $date       = Carbon::now()->format('Ymd');
-                $latestPo   = PurchaseOrder::where('po_number', 'like', "PO-{$date}-%")->lockForUpdate()->latest('id')->first(); // Lock for update
+                $latestPo   = PurchaseOrder::where('po_number', 'like', "PO-{$date}-%")->lockForUpdate()->latest('id')->first();
                 $nextNumber = $latestPo ? intval(substr($latestPo->po_number, -4)) + 1 : 1;
                 $poNumber   = "PO-{$date}-" . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
 
@@ -79,27 +118,30 @@ class PurchasingController extends Controller
                     'supplier_id'            => $validated['supplier_id'],
                     'store_request_id'       => $validated['store_request_id'] ?? null,
                     'user_id'                => Auth::id(),
-                    'order_date'             => Carbon::now()->toDateString(), // <-- Tanggal order saat ini
+                    'order_date'             => now(),
                     'expected_delivery_date' => $validated['expected_delivery_date'] ?? null,
-                    'payment_type'           => $paymentMethod, // <-- Simpan payment method
-                    'total_amount'           => $totalAmount,   // <-- Total dari backend
+                    'payment_type'           => $paymentMethod,
+                    'total_amount'           => $totalAmount,
                     'status'                 => 'diproses',
                     'notes'                  => $validated['notes'] ?? null,
                 ]);
 
                 foreach ($validated['items'] as $item) {
-                    $purchaseOrder->items()->create([
-                        'ingredient_id' => $item['ingredient_id'],
-                        'quantity'      => $item['quantity'],
-                        'price'         => $item['price'],
-                        'subtotal'      => $item['quantity'] * $item['price'],
-                    ]);
+                    if (in_array($item['item_type'], [Ingredient::class, Ffne::class])) {
+                        $purchaseOrder->items()->create([
+                            'itemable_id'   => $item['item_id'],
+                            'itemable_type' => $item['item_type'],
+                            'quantity'      => $item['quantity'],
+                            'price'         => $item['price'],
+                            'subtotal'      => $item['quantity'] * $item['price'],
+                        ]);
+                    }
                 }
 
                 if ($purchaseOrder->store_request_id) {
                     $storeRequest = StoreRequest::find($purchaseOrder->store_request_id);
                     if ($storeRequest && $storeRequest->status === 'proses') {
-                        $storeRequest->status = 'po'; // Status 'po'
+                        $storeRequest->status = 'po';
                         $storeRequest->save();
                     }
                 }
@@ -113,18 +155,17 @@ class PurchasingController extends Controller
                 'po_number'         => $result->po_number,
                 'purchase_order_id' => $result->id,
             ]);
-
         } catch (ValidationException $e) {
             return response()->json([
                 'status'  => 'error',
-                'message' => $e->getMessage(), // Pesan error utama
-                'errors'  => $e->errors(),     // Detail error per field
-            ], 422);                       // Status 422 Unprocessable Entity
-        } catch (Throwable $e) {
+                'message' => $e->getMessage(),
+                'errors'  => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
             \Log::error("Error creating PO: " . $e->getMessage() . "\n" . $e->getTraceAsString());
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Gagal membuat Purchase Order: Terjadi kesalahan internal server.',
+                'message' => 'Gagal membuat Purchase Order: ' . $e->getMessage(),
             ], 500);
         }
     }
@@ -132,7 +173,7 @@ class PurchasingController extends Controller
     public function purchaseOrderDestroy(PurchaseOrder $purchaseOrder)
     {
         try {
-            DB::transaction(function () use ($purchaseOrder) {
+            \DB::transaction(function () use ($purchaseOrder) {
                 $supplier = $purchaseOrder->supplier; // Ambil supplier sebelum PO dihapus
 
                 // Kembalikan status Store Request jika ada
@@ -184,18 +225,35 @@ class PurchasingController extends Controller
             ], 404);
         }
 
-        // Eager load items with their ingredient relation
-        $items = \App\Models\StoreRequestItem::with('ingredient')
+        $items = StoreRequestItem::with('itemable') // <-- UBAH DI SINI
             ->where('store_request_id', $storeRequestId)
             ->get()
             ->map(function ($item) {
-                return [
-                    'ingredient_id'   => $item->ingredient_id,
-                    'ingredient_name' => optional($item->ingredient)->name ?? '-',
-                    'quantity'        => $item->requested_quantity,
-                    'issued_quantity' => $item->issued_quantity,
-                ];
+                if (! $item->itemable) {
+                    return null; // Lewati item yang rusak/dihapus
+                }
+
+                // Cek tipenya
+                if ($item->itemable instanceof Ingredient) {
+                    return [
+                        'item_id'   => $item->itemable_id,
+                        'item_type' => Ingredient::class, // Kirim nama kelas
+                        'item_name' => $item->itemable->name,
+                        'item_unit' => $item->itemable->unit,
+                        'quantity'  => $item->requested_quantity,
+                    ];
+                } elseif ($item->itemable instanceof Ffne) {
+                    return [
+                        'item_id'   => $item->itemable_id,
+                        'item_type' => Ffne::class, // Kirim nama kelas
+                        'item_name' => $item->itemable->nama_ffne,
+                        'item_unit' => $item->itemable->satuan_ffne,
+                        'quantity'  => $item->requested_quantity,
+                    ];
+                }
+                return null;
             })
+            ->filter()
             ->toArray();
 
         return response()->json([
@@ -209,7 +267,7 @@ class PurchasingController extends Controller
         $purchaseOrder = PurchaseOrder::with([
             'supplier',
             'user',
-            'items.ingredient',
+            'items.itemable',
             'storeRequest',
         ])->find($id);
 
@@ -220,16 +278,40 @@ class PurchasingController extends Controller
             ], 404);
         }
 
-        // Format items
+        // --- PERBAIKI FORMAT ITEMS ---
         $items = $purchaseOrder->items->map(function ($item) {
+            $itemName = '-';
+            $itemUnit = '-';
+            $itemCode = null;
+            $itemType = null;
+
+            if ($item->itemable) {
+                if ($item->itemable instanceof \App\Models\Ingredient) {
+                    $itemName = $item->itemable->name;
+                    $itemUnit = $item->itemable->unit;
+                    $itemCode = $item->itemable->code ?? $item->itemable->id;
+                    $itemType = \App\Models\Ingredient::class;
+                } elseif ($item->itemable instanceof \App\Models\Ffne) {
+                    $itemName = $item->itemable->nama_ffne;
+                    $itemUnit = $item->itemable->satuan_ffne;
+                    $itemCode = $item->itemable->kode_ffne;
+                    $itemType = \App\Models\Ffne::class;
+                }
+            }
+
             return [
-                'id'              => $item->id,
-                'ingredient_id'   => $item->ingredient_id,
-                'ingredient_name' => optional($item->ingredient)->name ?? '-',
-                'quantity'        => $item->quantity,
-                'price'           => $item->price,
+                'id'        => $item->id,
+                'item_id'   => $item->itemable_id,
+                'item_type' => $item->itemable_type,
+                'item_code' => $itemCode,
+                'item_name' => $itemName,
+                'item_unit' => $itemUnit,
+                'quantity'  => $item->quantity,
+                'price'     => $item->price,
+                'subtotal'  => $item->subtotal,
             ];
         });
+        // --- AKHIR PERBAIKAN ---
 
         return response()->json([
             'status' => 'success',
@@ -240,7 +322,7 @@ class PurchasingController extends Controller
                 'status'        => $purchaseOrder->status,
                 'notes'         => $purchaseOrder->notes,
                 'payment_type'  => $purchaseOrder->payment_type,
-                'total_amount'  => $items->sum(function ($i) {return $i['quantity'] * $i['price'];}),
+                'total_amount'  => (float) $purchaseOrder->total_amount,
                 'supplier'      => [
                     'id'   => optional($purchaseOrder->supplier)->id,
                     'name' => optional($purchaseOrder->supplier)->name,
@@ -259,7 +341,7 @@ class PurchasingController extends Controller
         $purchaseOrder = PurchaseOrder::with([
             'supplier',
             'user',
-            'items.ingredient',
+            'items.itemable',
             'storeRequest',
         ])->findOrFail($id);
         $settings = Setting::pluck('value', 'key')->toArray();
@@ -273,7 +355,7 @@ class PurchasingController extends Controller
     public function penerimaanbarangIndex()
     {
         $receipts       = GoodsReceipt::latest()->get();
-        $purchaseOrders = PurchaseOrder::orderBy('order_date', 'desc')->get();
+        $purchaseOrders = PurchaseOrder::where('status', 'diproses')->orderBy('order_date', 'desc')->get();
         $ingredients    = Ingredient::orderBy('name')->get();
 
         return view('purchasing.penerimaanbarang.index', compact('receipts', 'purchaseOrders', 'ingredients'));
@@ -292,14 +374,12 @@ class PurchasingController extends Controller
             'items.*.notes'                  => 'nullable|string|max:500',
         ]);
 
-        $updatedStocks = [];
+        $updatedStocksLog = [];
 
         try {
-            DB::transaction(function () use ($request, $validated, &$updatedStocks) {
-                // Generate receipt number
+            \DB::transaction(function () use ($request, $validated, &$updatedStocksLog) {
                 $date = now()->format('Ymd');
 
-                // Generate nomor penerimaan barang (receipt_number) hari ini
                 $lastReceipt = GoodsReceipt::whereDate('created_at', now()->toDateString())
                     ->orderByDesc('id')
                     ->first();
@@ -311,19 +391,16 @@ class PurchasingController extends Controller
 
                 $receipt_number = 'GR-' . $date . '-' . str_pad($urut, 3, '0', STR_PAD_LEFT);
 
-                // Handle file bukti
                 $proofPath = null;
                 if ($request->hasFile('proof_document')) {
                     $proofPath = $request->file('proof_document')->store('proofs', 'public');
                 }
 
-                // Ambil purchase order dan supplier secara eager load
                 $purchaseOrder = PurchaseOrder::with('supplier')->find($validated['purchase_order_id']);
                 if (! $purchaseOrder) {
                     throw new \Exception("Purchase Order tidak ditemukan.");
                 }
 
-                // LOGIKA BARU: Hanya jika pembayaran Tempo, kurangi limit kredit supplier
                 if (
                     isset($purchaseOrder->payment_type) &&
                     $purchaseOrder->payment_type === PurchaseOrder::PAYMENT_TEMPO &&
@@ -333,7 +410,6 @@ class PurchasingController extends Controller
                     Supplier::where('id', $purchaseOrder->supplier_id)->decrement('credit_limit', $poTotalAmount);
                 }
 
-                // Buat header GoodsReceipt
                 $goodsReceipt = GoodsReceipt::create([
                     'receipt_number'    => $receipt_number,
                     'purchase_order_id' => $validated['purchase_order_id'],
@@ -342,54 +418,97 @@ class PurchasingController extends Controller
                     'proof_document'    => $proofPath,
                 ]);
 
-                // Update status PO jika masih 'diproses' menjadi 'diterima'
                 if ($purchaseOrder->status === 'diproses') {
                     $purchaseOrder->status = 'diterima';
                     $purchaseOrder->save();
-                }
 
-                // Update stok bahan (ingredients)
-                foreach ($validated['items'] as $itemData) {
-                    // Create item record
-                    $receiptItem = GoodsReceiptItem::create([
-                        'goods_receipt_id'       => $goodsReceipt->id,
-                        'purchase_order_item_id' => $itemData['purchase_order_item_id'],
-                        'quantity_received'      => $itemData['quantity_received'],
-                        'quantity_rejected'      => $itemData['quantity_rejected'] ?? 0,
-                        'notes'                  => $itemData['notes'] ?? null,
-                    ]);
-
-                    // Update stock ingredient
-                    $poItem = PurchaseOrderItem::with('ingredient')->find($itemData['purchase_order_item_id']);
-
-                    if ($poItem && $poItem->ingredient) {
-                        $ingredient = $poItem->ingredient;
-                        $oldStock   = $ingredient->stock;
-
-                        $ingredient->increment('stock', $itemData['quantity_received']);
-                        $newStock = $ingredient->fresh()->stock;
-
-                        $updatedStocks[] = [
-                            'ingredient_id'   => $ingredient->id,
-                            'ingredient_name' => $ingredient->name,
-                            'qty_received'    => $itemData['quantity_received'],
-                            'qty_rejected'    => $itemData['quantity_rejected'] ?? 0,
-                            'stock_before'    => $oldStock,
-                            'stock_after'     => $newStock,
-                        ];
-                        // Jika ingin buat detail GoodsReceiptItem, bisa buat di sini (jika tabelnya ada)
-                        // $goodsReceipt->items()->create([
-                        //     'ingredient_id' => $ingredient->id,
-                        //     'quantity_received' => $itemData['quantity_received'],
-                        // ]);
+                    // Setelah PO diterima, update juga status store request yang terkait (jika ada)
+                    if ($purchaseOrder->store_request_id) {
+                        $storeRequest = \App\Models\StoreRequest::find($purchaseOrder->store_request_id);
+                        if ($storeRequest) {
+                            $storeRequest->status = 'diterima';
+                            $storeRequest->save();
+                        }
                     }
                 }
 
-                // Update PO status
-                $purchaseOrder = PurchaseOrder::find($validated['purchase_order_id']);
-                if ($purchaseOrder) {
-                    $purchaseOrder->update(['status' => 'diterima']);
+                foreach ($validated['items'] as $itemData) {
+                    $qtyReceived = (float) ($itemData['quantity_received'] ?? 0);
+                    $qtyRejected = (float) ($itemData['quantity_rejected'] ?? 0);
+                    $qtyToAdd    = $qtyReceived - $qtyRejected;
+
+                    if ($qtyToAdd < 0) {
+                        throw new \Exception("Jumlah ditolak tidak boleh melebihi jumlah diterima.");
+                    }
+
+                    $receiptItem = $goodsReceipt->items()->create([
+                        'purchase_order_item_id' => $itemData['purchase_order_item_id'],
+                        'quantity_received'      => $qtyReceived,
+                        'quantity_rejected'      => $qtyRejected,
+                        'notes'                  => $itemData['notes'] ?? null,
+                    ]);
+
+                    $poItem = PurchaseOrderItem::with('itemable')->find($itemData['purchase_order_item_id']);
+
+                    if ($poItem && $poItem->itemable) {
+                        $itemMaster = $poItem->itemable;
+                        $oldStock   = (float) $itemMaster->stock;
+
+                        if ($qtyToAdd > 0) {
+                            $itemMaster->increment('stock', $qtyToAdd);
+                        }
+
+                        $newStock = (float) $itemMaster->fresh()->stock;
+
+                        $newAverageCost = $itemMaster->getAverageCost();
+
+                        if ($itemMaster instanceof Ingredient) {
+                            $itemMaster->cost_price = $newAverageCost; // Update 'cost_price'
+                            $itemName               = $itemMaster->name;
+                        } elseif ($itemMaster instanceof Ffne) {
+                            $itemMaster->harga = $newAverageCost; // Update 'harga'
+                            $itemName          = $itemMaster->nama_ffne;
+                        }
+                        $itemMaster->save();
+
+                        if ($itemMaster instanceof Ingredient) {
+                            IngredientStockAdjustment::create([
+                                'ingredient_id' => $itemMaster->id,
+                                'user_id'       => auth()->id(),
+                                'type'          => 'pembelian', // Pastikan tipe sesuai ENUM migration!
+                                'quantity'      => $qtyToAdd,
+                                'stock_before'  => $oldStock,
+                                'stock_after'   => $newStock,
+                                'notes'         => 'Penerimaan dari PO: ' . $purchaseOrder->po_number,
+                            ]);
+                        } elseif ($itemMaster instanceof Ffne) {
+                            FfneStockAdj::create([
+                                'ffne_id'        => $itemMaster->id,
+                                'user_id'        => auth()->id(),
+                                'type'           => 'pembelian', // Pastikan tipe sesuai ENUM migration!
+                                'quantity'       => $qtyToAdd,
+                                'stock_before'   => $oldStock,
+                                'stock_after'    => $newStock,
+                                'notes'          => 'Penerimaan dari PO: ' . $purchaseOrder->po_number,
+                                'reference_id'   => $goodsReceipt->id,
+                                'reference_type' => GoodsReceipt::class,
+                            ]);
+                        }
+
+                        $updatedStocksLog[] = [
+                            'item_type'    => ($itemMaster instanceof Ingredient) ? 'Ingredient' : 'FFNE',
+                            'item_id'      => $itemMaster->id,
+                            'item_name'    => $itemName,
+                            'qty_received' => $qtyReceived,
+                            'qty_rejected' => $qtyRejected,
+                            'qty_added'    => $qtyToAdd, // Qty yg benar-benar masuk stok
+                            'stock_before' => $oldStock,
+                            'stock_after'  => $newStock,
+                        ];
+                    }
                 }
+
+                return $goodsReceipt;
             });
         } catch (\Exception $e) {
             \Log::error('Error penerimaan barang: ' . $e->getMessage());
@@ -402,14 +521,14 @@ class PurchasingController extends Controller
         return response()->json([
             'status'         => 'success',
             'message'        => 'Penerimaan barang berhasil dicatat dan stok telah diperbarui.',
-            'updated_stocks' => $updatedStocks, // Berisi list ingredient yang stoknya diperbarui beserta qty
+            'updated_stocks' => $updatedStocksLog,
         ]);
     }
 
     public function penerimaanbarangDestroy(GoodsReceipt $penerimaanbarang)
     {
         try {
-            DB::transaction(function () use ($penerimaanbarang) {
+            \DB::transaction(function () use ($penerimaanbarang) {
                 $purchaseOrder = PurchaseOrder::with('supplier')->find($penerimaanbarang->purchase_order_id);
 
                 if ($penerimaanbarang->proof_document) {
@@ -439,7 +558,7 @@ class PurchasingController extends Controller
     public function penerimaanbarangShow($id)
     {
         $penerimaan  = GoodsReceipt::with(['purchaseOrder', 'user'])->find($id);
-        $detailItems = GoodsReceiptItem::with(['purchaseOrderItem.ingredient'])
+        $detailItems = GoodsReceiptItem::with(['purchaseOrderItem.itemable'])
             ->where('goods_receipt_id', $id)
             ->get();
 
@@ -467,15 +586,41 @@ class PurchasingController extends Controller
                 'proof_document' => $penerimaan->proof_document,
             ],
             'detail_items' => $detailItems->map(function ($item) {
+
+                $itemName = 'N/A';
+                $itemUnit = 'N/A';
+                $itemCode = '-';
+                $itemId   = null;
+                $itemType = null;
+
+                if ($item->purchaseOrderItem && $item->purchaseOrderItem->itemable) {
+                    $itemable = $item->purchaseOrderItem->itemable;
+
+                    if ($itemable instanceof \App\Models\Ingredient) {
+                        $itemName = $itemable->name;
+                        $itemUnit = $itemable->unit;
+                        // $itemCode = $itemable->code ?? $itemable->id;
+                        $itemId   = $itemable->id;
+                        $itemType = Ingredient::class;
+                    } elseif ($itemable instanceof \App\Models\Ffne) {
+                        $itemName = $itemable->nama_ffne;
+                        $itemUnit = $itemable->satuan_ffne;
+                        $itemCode = $itemable->kode_ffne;
+                        $itemId   = $itemable->id;
+                        $itemType = Ffne::class;
+                    }
+                }
+
                 return [
                     'id'                     => $item->id,
                     'purchase_order_item_id' => $item->purchase_order_item_id,
-                    'ingredient'             => $item->purchaseOrderItem && $item->purchaseOrderItem->ingredient ? [
-                        'id'   => $item->purchaseOrderItem->ingredient->id,
-                        'name' => $item->purchaseOrderItem->ingredient->name,
-                    ] : null,
-                    'quantity_received'      => $item->quantity_received,
-                    'quantity_rejected'      => $item->quantity_rejected,
+                    'item_id'                => $itemId,
+                    'item_type'              => $itemType,
+                    'item_code'              => $itemCode,
+                    'item_name'              => $itemName,
+                    'item_unit'              => $itemUnit,
+                    'quantity_received'      => (float) $item->quantity_received,
+                    'quantity_rejected'      => (float) $item->quantity_rejected,
                     'notes'                  => $item->notes,
                 ];
             })->all(),
@@ -485,7 +630,7 @@ class PurchasingController extends Controller
     public function getPoItems($poId)
     {
         $purchaseOrder = PurchaseOrder::with([
-            'items.ingredient',
+            'items.itemable', // Load polymorphic relation
         ])->find($poId);
 
         if (! $purchaseOrder) {
@@ -496,13 +641,32 @@ class PurchasingController extends Controller
         }
 
         $items = $purchaseOrder->items->map(function ($item) {
+            // Inisialisasi default values
+            $itemName  = '-';
+            $itemUnit  = '';
+            $costPrice = 0;
+
+            // Cek tipe itemable dan ambil data yang sesuai
+            if ($item->itemable) {
+                if ($item->itemable instanceof \App\Models\Ingredient) {
+                    $itemName  = $item->itemable->name;
+                    $itemUnit  = $item->itemable->unit;
+                    $costPrice = $item->price; // Gunakan price dari PO item
+                } elseif ($item->itemable instanceof \App\Models\Ffne) {
+                    $itemName  = $item->itemable->nama_ffne;
+                    $itemUnit  = $item->itemable->satuan_ffne;
+                    $costPrice = $item->price; // Gunakan price dari PO item
+                }
+            }
+
             return [
                 'purchase_order_item_id' => $item->id,
-                'ingredient_id'          => $item->ingredient_id,
-                'ingredient_name'        => optional($item->ingredient)->name ?? '-',
+                'item_id'                => $item->itemable_id,
+                'item_type'              => $item->itemable_type,
+                'name'                   => $itemName, // PERBAIKAN: gunakan 'name' bukan 'ingredient_name'
                 'quantity_ordered'       => $item->quantity,
-                'unit'                   => optional($item->ingredient)->unit ?? '',
-                'cost_price'             => $item->price,
+                'unit'                   => $itemUnit,
+                'cost_price'             => $costPrice,
             ];
         })->all();
 

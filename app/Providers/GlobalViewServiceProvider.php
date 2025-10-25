@@ -21,8 +21,10 @@ class GlobalViewServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Password di DB tidak di-encrypt jadi langsung ambil value-nya saja tanpa proses decrypt
         View::composer('app', function ($view) {
             $globalAuthPassword = Cache::remember('global_auth_password', 3600, function () {
+                // Ambil langsung password dari tabel Setting dengan key='authorization_password' (plain text)
                 return Setting::where('key', 'authorization_password')->value('value');
             });
 

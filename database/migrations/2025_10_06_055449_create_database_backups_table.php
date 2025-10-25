@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('database_backups', function (Blueprint $table) {
-            $table->id();
+            $table->bigIncrements('id'); // auto increment id
             $table->string('file_name');
             $table->string('file_path');
             $table->unsignedBigInteger('file_size'); // Ukuran dalam bytes

@@ -6,6 +6,7 @@ use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Illuminate\Support\Facades\Hash;
 
 class RolePermissionSeeder extends Seeder
 {
@@ -15,85 +16,93 @@ class RolePermissionSeeder extends Seeder
     public function run(): void
     {
         // Reset cached roles and permissions
-        app()[PermissionRegistrar::class]->forgetCachedPermissions();
+        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        // --- 1. Buat Permissions ---
         $permissions = [
             // Admin
-            'manage users', 'manage roles', 'manage system settings', 'manage backups',
-            // Man Power
+            'manage users', 'manage roles',
+
+            // HR/Payroll
             'manage employees', 'manage payroll',
-            // Kitchen/Bar Master
+
+            // Kitchen Master
             'manage categories', 'manage ingredients', 'manage menus',
-            // Kitchen/Bar Ops
-            'create store requests', 'approve store requests', 'view store requests', 'manage energy cost',
+
+            // Kitchen Ops
+            'create store requests', 'approve store requests', 'view store requests',
+            'manage energy cost', 'view ffne',
+
             // Purchasing
-            'manage suppliers', 'view purchase orders', 'create purchase orders', 'delete purchase orders', 'receive goods',
+            'view purchase orders', 'create purchase orders', 'delete purchase orders', 'receive goods',
+
             // Accounting
-            'manage supplier payments', 'view credit monitoring', 'view sales reports',
+            'manage suppliers', 'manage supplier payments', 'view credit monitoring',
+
+            // Reports
+            'view sales reports', 'view profit loss report', 'view inventory mutation report',
+
             // Cashier
-            'access cashier terminal', 'view transaction history', 'process complimentary',
+            'access cashier terminal', 'view transaction history',
         ];
 
         foreach ($permissions as $permission) {
             Permission::firstOrCreate(['name' => $permission]);
         }
-        $this->command->info('Permissions created.');
+        $this->command->info('Semua permissions telah dibuat.');
 
-        $roleSuperAdmin = Role::firstOrCreate(['name' => 'Super Admin']);
-        $roleSuperAdmin->givePermissionTo(Permission::all());
-        $this->command->info('Super Admin role created and all permissions granted.');
+        // 1. Super Admin (Mendapat semua permission)
+        $superAdminRole = Role::firstOrCreate(['name' => 'Super Admin']);
+        $superAdminRole->givePermissionTo(Permission::all());
 
-        // HeadKitchen
-        $roleHeadKitchen = Role::firstOrCreate(['name' => 'HeadKitchen']);
-        $roleHeadKitchen->givePermissionTo([
+        // 2. HeadBar
+        $headBarRole = Role::firstOrCreate(['name' => 'HeadBar']);
+        $headBarRole->givePermissionTo([
             'manage categories', 'manage ingredients', 'manage menus',
             'create store requests', 'approve store requests', 'view store requests',
-            'manage energy cost', 'view purchase orders', // Opsional bisa lihat PO
+            'manage energy cost', 'view ffne',
         ]);
-        $this->command->info('HeadKitchen role created.');
 
-        // HeadBar
-        $roleHeadBar = Role::firstOrCreate(['name' => 'HeadBar']);
-        $roleHeadBar->givePermissionTo([
+        // 3. HeadKitchen
+        $headKitchenRole = Role::firstOrCreate(['name' => 'HeadKitchen']);
+        $headKitchenRole->givePermissionTo([
             'manage categories', 'manage ingredients', 'manage menus',
             'create store requests', 'approve store requests', 'view store requests',
+            'manage energy cost', 'view ffne',
         ]);
-        $this->command->info('HeadBar role created.');
 
-        // Purchasing
-        $rolePurchasing = Role::firstOrCreate(['name' => 'Purchasing']);
-        $rolePurchasing->givePermissionTo([
-            'manage suppliers',
+        // 4. Accounting
+        $accountingRole = Role::firstOrCreate(['name' => 'Accounting']);
+        $accountingRole->givePermissionTo([
+            'manage payroll', // Sesuai logika blade, payroll juga bisa diakses accounting
+            'manage suppliers', 'manage supplier payments', 'view credit monitoring',
+            'view sales reports', 'view profit loss report', 'view inventory mutation report',
+        ]);
+
+        // 5. Purchasing
+        $purchasingRole = Role::firstOrCreate(['name' => 'Purchasing']);
+        $purchasingRole->givePermissionTo([
             'view purchase orders', 'create purchase orders', 'delete purchase orders',
             'receive goods',
-            'view store requests', // Untuk melihat SR yg perlu di-PO
         ]);
-        $this->command->info('Purchasing role created.');
 
-        // Accounting
-        $roleAccounting = Role::firstOrCreate(['name' => 'Accounting']);
-        $roleAccounting->givePermissionTo([
-            'manage supplier payments', 'view credit monitoring', 'view sales reports',
-            'manage payroll',
-            'view purchase orders', // <-- Sesuai permintaanmu
+        // 6. Cashier
+        $cashierRole = Role::firstOrCreate(['name' => 'Cashier']);
+        $cashierRole->givePermissionTo([
+            'access cashier terminal', 'view transaction history',
         ]);
-        $this->command->info('Accounting role created.');
 
-        // Cashier
-        $roleCashier = Role::firstOrCreate(['name' => 'Cashier']);
-        $roleCashier->givePermissionTo([
-            'access cashier terminal', 'view transaction history', 'process complimentary',
-        ]);
-        $this->command->info('Cashier role created.');
+        $this->command->info('Semua role telah dibuat dan permission telah diberikan.');
 
         $adminUser = User::firstOrCreate(
-            ['email' => 'admin@example.com'],
-            ['name' => 'Admin User', 'password' => bcrypt('password')]// Ganti password default
+            ['email' => 'admin@example.com'], // Ganti dengan email admin Anda
+            [
+                'name' => 'Super Admin',
+                'password' => Hash::make('password'), // GANTI DENGAN PASSWORD YANG AMAN
+            ]
         );
-        if ($adminUser) {
-            $adminUser->assignRole($roleSuperAdmin);
-            $this->command->info('Super Admin user created/assigned.');
-        }
+
+        $adminUser->assignRole($superAdminRole);
+
+        $this->command->info('User Super Admin default telah dibuat.');
     }
 }

@@ -3,6 +3,7 @@ namespace App\Http\Controllers;
 
 use App\Events\PrintReceipt;
 use App\Models\Ingredient;
+use App\Models\IngredientStockAdjustment;
 use App\Models\MenuCategory;
 use App\Models\MenuItem;
 use App\Models\Modifier;
@@ -14,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
 use Throwable;
 
@@ -263,11 +265,31 @@ class CashierController extends Controller
                     foreach ($menuItem->ingredients as $ingredient) {
                         $totalToDecrement = $ingredient->pivot->quantity * $itemData['quantity'];
                         $ingredient->decrement('stock', $totalToDecrement);
+                        IngredientStockAdjustment::create([
+                            'ingredient_id' => $ingredient->id,
+                            'user_id'       => Auth::id(),
+                            'type'          => 'penjualan',
+                            'quantity'      => -$totalToDecrement,                     // Negatif
+                            'stock_before'  => $ingredient->stock + $totalToDecrement, // Stok sebelum decrement
+                            'stock_after'   => $ingredient->stock,                     // Stok setelah decrement
+                            'notes'         => 'Penjualan: ' . $sale->id,
+                        ]);
                     }
                     foreach ($selectedModifiers as $modifier) {
                         if ($modifier->ingredient) {
                             $totalToDecrement = ($modifier->quantity_used ?? 1) * $itemData['quantity'];
-                            $modifier->ingredient->decrement('stock', $totalToDecrement);
+                            $ingredient       = $modifier->ingredient;
+                            $ingredient->decrement('stock', $totalToDecrement);
+
+                            IngredientStockAdjustment::create([
+                                'ingredient_id' => $ingredient->id,
+                                'user_id'       => Auth::id(),
+                                'type'          => 'penjualan',
+                                'quantity'      => -$totalToDecrement, // Negatif
+                                'stock_before'  => $ingredient->stock + $totalToDecrement,
+                                'stock_after'   => $ingredient->stock,
+                                'notes'         => 'Penjualan (modifier): ' . $sale->id . ' | Modifier: ' . $modifier->name,
+                            ]);
                         }
                     }
                 }
@@ -476,12 +498,33 @@ class CashierController extends Controller
                 foreach ($sale->items as $item) {
                     foreach ($item->menuItem->ingredients as $ingredient) {
                         $totalToIncrement = $ingredient->pivot->quantity * $item->quantity;
+                        $oldStock         = $ingredient->stock;
                         $ingredient->increment('stock', $totalToIncrement);
+                        IngredientStockAdjustment::create([
+                            'ingredient_id' => $ingredient->id,
+                            'user_id'       => auth()->id(),
+                            'type'          => 'void',
+                            'quantity'      => $totalToIncrement, // Penambahan stock, positif
+                            'stock_before'  => $oldStock,
+                            'stock_after'   => $ingredient->stock,
+                            'notes'         => 'Pembatalan transaksi (void) ID sale: ' . $sale->id,
+                        ]);
                     }
                     foreach ($item->selectedModifiers as $saleModifier) {
                         if ($saleModifier->modifier && $saleModifier->modifier->ingredient) {
-                            $totalToIncrement = $saleModifier->modifier->quantity_used * $item->quantity;
-                            $saleModifier->modifier->ingredient->increment('stock', $totalToIncrement);
+                            $ingredient       = $saleModifier->modifier->ingredient;
+                            $totalToIncrement = ($saleModifier->modifier->quantity_used ?? 1) * $item->quantity;
+                            $oldStock         = $ingredient->stock;
+                            $ingredient->increment('stock', $totalToIncrement);
+                            IngredientStockAdjustment::create([
+                                'ingredient_id' => $ingredient->id,
+                                'user_id'       => auth()->id(),
+                                'type'          => 'void',
+                                'quantity'      => $totalToIncrement,
+                                'stock_before'  => $oldStock,
+                                'stock_after'   => $ingredient->stock,
+                                'notes'         => 'Pembatalan transaksi (void, modifier) ID sale: ' . $sale->id . ' | Modifier: ' . $saleModifier->modifier->name,
+                            ]);
                         }
                     }
                 }
@@ -510,33 +553,21 @@ class CashierController extends Controller
                 'items.menuItem.menuCategory',
                 'items.selectedModifiers.modifier',
             ])->findOrFail($id);
-
+    
             $settings           = Setting::pluck('value', 'key')->toArray();
             $kitchenPrinterName = $settings['printer_dapur'] ?? null;
             $barPrinterName     = $settings['printer_bar'] ?? null;
-
-            // Validasi: Minimal satu printer harus dikonfigurasi
+    
             if (empty($kitchenPrinterName) && empty($barPrinterName)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Belum ada printer yang dikonfigurasi di pengaturan.',
                 ], 400);
             }
-
-            // Ambil daftar printer yang tersedia
-            $allPrinters = \Native\Laravel\Facades\System::printers();
-
-            if (empty($allPrinters)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Tidak ada printer yang terdeteksi di sistem.',
-                ], 400);
-            }
-
-            // Pisahkan items berdasarkan kategori
+    
             $kitchenItems = collect();
             $barItems     = collect();
-
+    
             foreach ($sale->items as $item) {
                 if ($item->menuItem && $item->menuItem->menuCategory &&
                     strtolower($item->menuItem->menuCategory->name) === 'minuman') {
@@ -545,145 +576,56 @@ class CashierController extends Controller
                     $kitchenItems->push($item);
                 }
             }
-
-            // Validasi: Harus ada item untuk dicetak
+    
             if ($kitchenItems->isEmpty() && $barItems->isEmpty()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Tidak ada item untuk dicetak.',
                 ], 400);
             }
-
-            $successPrinters = [];
-            $failedPrinters  = [];
-
-            // ============================================
-            // CETAK KE PRINTER DAPUR (item non-minuman)
-            // ============================================
-            if ($kitchenItems->isNotEmpty() && ! empty($kitchenPrinterName)) {
-                try {
-                    // Render HTML untuk kitchen
-                    $kitchenHtml = view('cashier._print_kitchen', [
-                        'sale'         => $sale,
-                        'itemsToPrint' => $kitchenItems,
-                        'settings'     => $settings,
-                    ])->render();
-
-                    // Debug: Log HTML length untuk memastikan ada content
-                    Log::info("Kitchen HTML length: " . strlen($kitchenHtml) . " chars");
-                    Log::info("Kitchen items count: " . $kitchenItems->count());
-
-                    // Cari printer berdasarkan name atau displayName
-                    $printer = collect($allPrinters)->first(function ($p) use ($kitchenPrinterName) {
-                        return $p->name === $kitchenPrinterName ||
-                        $p->displayName === $kitchenPrinterName;
-                    });
-
-                    if (! $printer) {
-                        $failedPrinters[] = "Dapur ({$kitchenPrinterName}) - Printer tidak ditemukan";
-                        Log::warning("Kitchen printer not found: {$kitchenPrinterName}");
-                    } else {
-                        // Print langsung
-                        \Native\Laravel\Facades\System::print($kitchenHtml, $printer, [
-                            'silent'   => false, // false = muncul dialog untuk virtual printer
-                            'pageSize' => [
-                                'width'  => 80000,  // 80mm
-                                'height' => 297000, // Auto height
-                            ],
-                            'margins'  => [
-                                'top'    => 0,
-                                'bottom' => 0,
-                                'left'   => 0,
-                                'right'  => 0,
-                            ],
-                        ]);
-
-                        $successPrinters[] = "Dapur ({$kitchenPrinterName})";
-                        Log::info("Kitchen print success: {$kitchenPrinterName}");
-                    }
-                } catch (\Exception $e) {
-                    $failedPrinters[] = "Dapur ({$kitchenPrinterName}) - {$e->getMessage()}";
-                    Log::error("Kitchen print failed: " . $e->getMessage());
-                }
+    
+            $printJobs = [];
+    
+            // Kitchen print job
+            if ($kitchenItems->isNotEmpty() && !empty($kitchenPrinterName)) {
+                $kitchenHtml = view('cashier._print_kitchen', [
+                    'sale'         => $sale,
+                    'itemsToPrint' => $kitchenItems,
+                    'settings'     => $settings,
+                    'Kitchen'      => true,
+                ])->render();
+    
+                $printJobs[] = [
+                    'printer' => $kitchenPrinterName,
+                    'html'    => $kitchenHtml,
+                ];
             }
-
-            // ============================================
-            // CETAK KE PRINTER BAR (item minuman)
-            // ============================================
-            if ($barItems->isNotEmpty() && ! empty($barPrinterName)) {
-                try {
-                    // Gunakan view khusus bar jika ada, fallback ke kitchen
-                    $barViewName = \View::exists('cashier._print_bar')
-                        ? 'cashier._print_bar'
-                        : 'cashier._print_kitchen';
-
-                    $barHtml = view($barViewName, [
-                        'sale'         => $sale,
-                        'itemsToPrint' => $barItems,
-                        'settings'     => $settings,
-                    ])->render();
-
-                    // Debug: Log HTML length untuk memastikan ada content
-                    Log::info("Bar HTML length: " . strlen($barHtml) . " chars");
-                    Log::info("Bar items count: " . $barItems->count());
-
-                    // Cari printer berdasarkan name atau displayName
-                    $printer = collect($allPrinters)->first(function ($p) use ($barPrinterName) {
-                        return $p->name === $barPrinterName ||
-                        $p->displayName === $barPrinterName;
-                    });
-
-                    if (! $printer) {
-                        $failedPrinters[] = "Bar ({$barPrinterName}) - Printer tidak ditemukan";
-                        Log::warning("Bar printer not found: {$barPrinterName}");
-                    } else {
-                        // Print langsung
-                        \Native\Laravel\Facades\System::print($barHtml, $printer, [
-                            'silent'   => false,
-                            'pageSize' => [
-                                'width'  => 80000,
-                                'height' => 297000,
-                            ],
-                            'margins'  => [
-                                'top'    => 0,
-                                'bottom' => 0,
-                                'left'   => 0,
-                                'right'  => 0,
-                            ],
-                        ]);
-
-                        $successPrinters[] = "Bar ({$barPrinterName})";
-                        Log::info("Bar print success: {$barPrinterName}");
-                    }
-                } catch (\Exception $e) {
-                    $failedPrinters[] = "Bar ({$barPrinterName}) - {$e->getMessage()}";
-                    Log::error("Bar print failed: " . $e->getMessage());
-                }
+    
+            // Bar print job
+            if ($barItems->isNotEmpty() && !empty($barPrinterName)) {
+                $barViewName = \View::exists('cashier._print_bar')
+                    ? 'cashier._print_bar'
+                    : 'cashier._print_kitchen';
+    
+                $barHtml = view($barViewName, [
+                    'sale'         => $sale,
+                    'itemsToPrint' => $barItems,
+                    'settings'     => $settings,
+                    'Bar'          => true,
+                ])->render();
+    
+                $printJobs[] = [
+                    'printer' => $barPrinterName,
+                    'html'    => $barHtml,
+                ];
             }
-
-            // ============================================
-            // RESPONSE BERDASARKAN HASIL
-            // ============================================
-            if (! empty($successPrinters)) {
-                $message = 'Struk berhasil dicetak ke: ' . implode(' & ', $successPrinters);
-
-                // Tambahkan warning jika ada yang gagal
-                if (! empty($failedPrinters)) {
-                    $message .= '. Gagal: ' . implode(', ', $failedPrinters);
-                }
-
-                return response()->json([
-                    'success' => true,
-                    'message' => $message,
-                ]);
-            }
-
-            // Semua printer gagal
+    
             return response()->json([
-                'success' => false,
-                'message' => 'Semua printer gagal. Detail: ' . implode(', ', $failedPrinters),
-            ], 500);
-
+                'success' => true,
+                'message' => 'Data print siap dikirim ke QZ Tray.',
+                'jobs'    => $printJobs,
+            ]);
+    
         } catch (\Exception $e) {
             Log::error('smartPrintAfterPayment failed: ' . $e->getMessage());
             return response()->json([
@@ -695,59 +637,52 @@ class CashierController extends Controller
 
     public function printCustomerReceipt($id)
     {
-        $sale = Sale::with([
-            'user',
-            'items.menuItem',
-            'items.selectedModifiers.modifier',
-            'payments',
-        ])->findOrFail($id);
-
-        $settings   = Setting::pluck('value', 'key')->toArray();
-        $logoBase64 = null;
-        $logoPath   = $settings['store_logo'] ?? null;
-        if ($logoPath && \Storage::disk('public')->exists($logoPath)) {
-            try {
-                $imageContents = \Storage::disk('public')->get($logoPath);
-                $mimeType      = \Storage::disk('public')->mimeType($logoPath);
-                $logoBase64    = 'data:' . $mimeType . ';base64,' . base64_encode($imageContents);
-            } catch (\Exception $e) {
-                // Biarkan logoBase64 null jika gagal
-            }
-        }
-
-        $printerName = $settings['printer_kasir'] ?? null;
-
         try {
-            // Kirim logoBase64 ke view
-            $html = view('cashier._print_cust', compact('sale', 'settings', 'logoBase64'))->render();
-            // $html = '<html><body style="margin:20px;"><h1>TEST PRINT</h1><p>Ini adalah test print</p></body></html>';
-
-            $isVirtualPrinter = in_array($printerName, ['Nitro PDF Creator', 'Microsoft Print to PDF']);
-
-            if ($printerName && ! $isVirtualPrinter) {
-                $allPrinters = \Native\Laravel\Facades\System::printers();
-                $printerObj = collect($allPrinters)->first(function ($printer) use ($printerName) {
-                    return $printer->name === $printerName;
-                });
-
-                if ($printerObj) {
-                    \Native\Laravel\Facades\System::print($html, $printerObj, [
-                        'silent'            => true,
-                        'printBackground'   => true,
-                        'preferCSSPageSize' => true,
-                    ]);
-                    return response()->json(['success' => true, 'message' => "Struk dikirim ke printer: {$printerName}"]);
-                } else {
-                    // Printer yang diset di settings tidak ditemukan di sistem
-                    return response()->json(['success' => false, 'message' => "Printer '{$printerName}' tidak ditemukan di daftar printer sistem."], 404);
+            $sale = Sale::with([
+                'user',
+                'items.menuItem',
+                'items.selectedModifiers.modifier',
+                'payments',
+            ])->findOrFail($id);
+    
+            $settings   = Setting::pluck('value', 'key')->toArray();
+            $logoBase64 = null;
+            $logoPath   = $settings['store_logo'] ?? null;
+    
+            if ($logoPath && Storage::disk('public')->exists($logoPath)) {
+                try {
+                    $imageContents = Storage::disk('public')->get($logoPath);
+                    $mimeType      = Storage::disk('public')->mimeType($logoPath);
+                    $logoBase64    = 'data:' . $mimeType . ';base64,' . base64_encode($imageContents);
+                } catch (\Exception $e) {
+                    Log::warning('Logo encoding error: ' . $e->getMessage());
                 }
-            } else {
-                // Fallback jika tidak ada printer atau jika itu virtual printer (tampilkan di view)
-                return view('cashier._print_cust', compact('sale', 'settings', 'logoBase64'));
             }
-
+    
+            $printerName = $settings['printer_kasir'] ?? null;
+    
+            if (empty($printerName)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Printer kasir belum dikonfigurasi.',
+                ], 400);
+            }
+    
+            $html = view('cashier._print_cust', compact('sale', 'settings', 'logoBase64'))->render();
+    
+            return response()->json([
+                'success' => true,
+                'message' => 'Struk siap dicetak',
+                'printer' => $printerName,
+                'html'    => $html,
+            ]);
+    
         } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => 'Gagal mencetak: ' . $e->getMessage()], 500);
+            Log::error('printCustomerReceipt failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal memproses struk: ' . $e->getMessage(),
+            ], 500);
         }
     }
 

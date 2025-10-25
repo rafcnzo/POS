@@ -40,7 +40,7 @@ class PurchaseOrder extends Model
 
     public function items()
     {
-        return $this->hasMany(PurchaseOrderItem::class);
+        return $this->hasMany(PurchaseOrderItem::class)->with('itemable');
     }
 
     public function goodsReceipts()

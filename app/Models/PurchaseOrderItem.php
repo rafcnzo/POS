@@ -3,7 +3,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use App\Models\Ingredient;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class PurchaseOrderItem extends Model
 {
@@ -11,10 +11,11 @@ class PurchaseOrderItem extends Model
 
     protected $guarded = [];
 
-    public function ingredient()
+    public function itemable(): MorphTo
     {
-        return $this->belongsTo(Ingredient::class);
+        return $this->morphTo();
     }
+
     /**
      * Relasi ke GoodsReceiptItems
      */
@@ -22,6 +23,15 @@ class PurchaseOrderItem extends Model
     {
         return $this->hasMany(GoodsReceiptItem::class, 'purchase_order_item_id');
     }
+
+    /**
+     * Relasi ke ingredients
+     */
+    public function ingredient()
+    {
+        return $this->hasMany(Ingredient::class, 'id');
+    }
+
     /**
      * Get total quantity yang sudah diterima
      */

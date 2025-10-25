@@ -10,8 +10,6 @@ return new class extends Migration
     {
         Schema::table('ffnes', function (Blueprint $table) {
             $table->integer('stock')->default(0)->after('satuan_ffne');
-            $table->dropForeign(['extra_id']); // Hapus jika constraint sudah ada
-            $table->dropColumn('extra_id'); // Hapus kolom ini
         });
     }
 
